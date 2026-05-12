@@ -1,6 +1,6 @@
 # 微信控制台 v2
 
-基于 PyQt5 的微信聊天工具，支持插件扩展、聊天记录存储、AI 对话。
+基于 PyQt5 的微信聊天工具，支持插件扩展、聊天记录存储、AI 对话。本地运行，数据不上云。
 
 ## 功能特性
 
@@ -31,55 +31,69 @@
 - Markdown 渲染
 - Ollama 本地模型支持
 
-## 环境配置
+## 环境要求
 
-### Python 依赖
+### 1. Python 3.10+
+
+### 2. Node.js（微信登录）
+
+下载安装：https://nodejs.org/
+
+### 3. Ollama（AI 对话）
+
+```bash
+# 安装 Ollama
+# 下载地址：https://ollama.com/download
+
+# 启动服务
+ollama serve
+
+# 下载模型
+ollama pull gpt-oss:120b-cloud
+```
+
+### 4. WeChat 登录
+
+需要已登录微信的账号信息，存储在：
+```
+C:\Users\<用户名>\.openclaw\openclaw-weixin\
+├── config.json          # 当前账号
+└── accounts/            # 账号 token
+```
+
+## 安装
+
+### 1. 克隆仓库
+
+```bash
+git clone https://github.com/letmego2022/weixinctrl-GUI.git
+cd weixinctrl-GUI
+```
+
+### 2. 安装 Python 依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-主要依赖：
+依赖说明：
 - `PyQt5>=5.15.0` - GUI 框架
 - `requests>=2.31.0` - HTTP 请求
 - `mistune>=3.0.0` - Markdown 渲染
 - `akshare>=1.12.0` - 股市数据
 
-### Node.js（微信登录）
-
-运行微信登录脚本需要 Node.js 环境：
+### 3. 微信登录
 
 ```bash
 node standalone-login.mjs
 ```
 
-### Ollama（AI 对话）
+或在 GUI 中点击「🔐 登录微信」按钮。
+
+### 4. 启动程序
 
 ```bash
-ollama serve
-ollama pull gpt-oss:120b-cloud
-```
-
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 登录微信
-
-```bash
-node standalone-login.mjs
-```
-
-或点击 GUI 中的「🔐 登录微信」按钮。
-
-### 3. 启动程序
-
-```bash
-python -m v2.main
+python main.py
 ```
 
 或双击 `v2start.bat`
@@ -117,31 +131,30 @@ python -m v2.main
 
 ```
 .
-├── standalone-login.mjs   # Node.js 微信登录脚本（需 Node.js 运行）
-├── v2start.bat            # Windows 启动脚本
-├── v2/
-│   ├── main.py            # 程序入口
-│   ├── bridge.py          # PyQt 信号中心
-│   ├── client.py          # 微信 API
-│   ├── commands.py        # 内置命令
-│   ├── requirements.txt   # Python 依赖
-│   ├── plugins/           # 插件目录
-│   │   ├── weather.py     # 天气插件
-│   │   ├── market.py      # 股市插件
-│   │   ├── daily_summary.py # 每日总结
-│   │   ├── cmb_exchange.py # 招商汇率
-│   │   ├── phone.py       # 手机归属地
-│   │   ├── cmd.py         # Shell 命令
-│   │   └── cc.py          # Claude Code 查询
-│   ├── gui/               # GUI 组件
-│   │   ├── main_window.py # 主窗口
-│   │   ├── message_panel.py # 消息日志
-│   │   ├── plugin_panel.py  # 插件管理
-│   │   ├── log_panel.py   # 日志面板
-│   │   └── stylesheet.py  # 深色主题样式
-│   └── worker/
-│       └── poller.py      # 消息轮询线程
-└── chat_logs/            # 聊天记录（JSON）
+├── main.py               # 程序入口
+├── bridge.py             # PyQt 信号中心
+├── client.py             # 微信 API
+├── commands.py           # 内置命令
+├── standalone-login.mjs  # Node.js 微信登录脚本
+├── v2start.bat           # Windows 启动脚本
+├── requirements.txt      # Python 依赖
+├── .gitignore            # Git 忽略文件
+├── gui/                   # GUI 组件
+│   ├── main_window.py    # 主窗口
+│   ├── message_panel.py  # 消息日志
+│   ├── plugin_panel.py   # 插件管理
+│   ├── log_panel.py      # 日志面板
+│   └── stylesheet.py      # 深色主题样式
+├── plugins/              # 插件目录
+│   ├── weather.py        # 天气插件
+│   ├── market.py         # 股市插件
+│   ├── daily_summary.py  # 每日总结
+│   ├── cmb_exchange.py   # 招商汇率
+│   ├── phone.py          # 手机归属地
+│   ├── cmd.py            # Shell 命令
+│   └── cc.py             # Claude Code 查询
+└── worker/
+    └── poller.py         # 消息轮询线程
 ```
 
 ## 消息格式
