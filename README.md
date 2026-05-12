@@ -1,6 +1,16 @@
 # 微信控制台 v2
 
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://github.com/letmego2022/weixinctrl-GUI)
+
 基于 PyQt5 的微信聊天工具，支持插件扩展、聊天记录存储、AI 对话。本地运行，数据不上云。
+
+## 截图预览
+
+| 微信端 | 电脑端 |
+|:---:|:---:|
+| ![微信端](pic/微信端.png) | ![电脑端](pic/电脑端.png) |
 
 ## 功能特性
 
