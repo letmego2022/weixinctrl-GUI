@@ -6,11 +6,10 @@ import sys
 import os
 import time
 import logging
+import threading
 
 # 将项目根目录加入 path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from PyQt5.QtCore import QThread
 
 # 复用 client.py 的核心 API
 from v2.client import (
@@ -45,7 +44,7 @@ from v2.plugins.daily_summary import DailySummaryPlugin
 logger = logging.getLogger("weixin.poller")
 
 
-class PollerThread(QThread):
+class PollerThread(threading.Thread):
     """
     QThread: 消息轮询主循环。
     运行独立线程中，通过 bridge 信号与 GUI 通信。
@@ -101,7 +100,7 @@ class PollerThread(QThread):
     def _emit_log(self, msg, level=1):
         """发送日志信号"""
         from v2.bridge import bridge
-        bridge.signal_log.emit(msg, level)
+        bridge.emit_log(msg, level)
 
     def _classify_message(self, msg):
         """分类消息，返回 (type, content, file_path)"""
@@ -143,7 +142,7 @@ class PollerThread(QThread):
 
         # 发送到 GUI
         from v2.bridge import bridge
-        bridge.signal_message_received.emit({
+        bridge.emit_message_received({
             "type": msg_type,
             "from_user": from_user,
             "content": content,
@@ -160,7 +159,7 @@ class PollerThread(QThread):
                 ret = result.get("ret")
                 if ret == 0 or ret is None or ret == 200:
                     self._emit_log(f"插件 {plugin_name} 已回复", 1)
-                    bridge.signal_message_sent.emit(plugin_text)
+                    bridge.emit_message_sent(plugin_text)
                     log_message("sent", self._user_id, from_user, "text", plugin_text, context_token=context_token)
             return  # 插件已处理，跳过 AI
 
@@ -180,7 +179,7 @@ class PollerThread(QThread):
                 result = send_message(self._account, from_user, response_text, context_token)
                 ret = result.get("ret")
                 if ret == 0 or ret is None or ret == 200:
-                    bridge.signal_message_sent.emit(response_text)
+                    bridge.emit_message_sent(response_text)
                     self._emit_log(f"已回复: {response_text[:40]}...", 1)
                     log_message("sent", self._user_id, from_user, "text", response_text, context_token=context_token)
 
@@ -193,7 +192,7 @@ class PollerThread(QThread):
             ret = result.get("ret")
             if ret == 0 or ret is None or ret == 200:
                 self._emit_log(f"插件 {plugin_name} 已发送提醒", 1)
-                bridge.signal_message_sent.emit(msg_text)
+                bridge.emit_message_sent(msg_text)
                 log_message("sent", self._user_id, self._user_id, "text", msg_text)
 
     def run(self):
@@ -214,7 +213,7 @@ class PollerThread(QThread):
                 self._emit_log(f"插件 {plugin_name} 已发送启动提醒", 1)
 
         from v2.bridge import bridge
-        bridge.signal_polling_status.emit(True)
+        bridge.emit_polling_status(True)
 
         while self._running:
             try:
@@ -235,7 +234,7 @@ class PollerThread(QThread):
                 self._emit_log(f"轮询异常: {e}", 3)
                 time.sleep(5)
 
-        bridge.signal_polling_status.emit(False)
+        bridge.emit_polling_status(False)
         self._emit_log("轮询线程已停止", 1)
 
     def stop(self):

@@ -253,7 +253,7 @@ class MarketPlugin(PluginBase):
     def _do_push(self) -> Optional[str]:
         """执行推送：检查每个区域是否到点，到点则推送对应市场的收盘数据"""
         pushed_any = False
-        lines = ["## 🌍 全球股市收盘播报\n\n"]
+        lines = ["## 🌍 全球股市收盘播报\n"]
 
         for m in MARKETS:
             region = m["region"]
@@ -272,12 +272,9 @@ class MarketPlugin(PluginBase):
 
         # 补上表格头
         header = "| 市场 | 点位 | 涨跌 | 趋势 |\n|:---|---:|---:|:---:|\n"
-        content = "\n".join(lines)
-        # 插入表头到 ## 后面
-        parts = content.split("\n\n", 1)
-        if len(parts) == 2:
-            return parts[0] + "\n\n" + header + parts[1]
-        return content
+        title = lines[0]  # "## 🌍 全球股市收盘播报\n"
+        rows = "\n".join(lines[1:])
+        return title + header + rows
 
     def on_start(self, account, user_id: str) -> Optional[str]:
         return None  # 启动时不推送
