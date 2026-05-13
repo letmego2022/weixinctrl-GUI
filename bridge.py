@@ -1,49 +1,111 @@
 """
 bridge.py - 信号中心，单例模式
-负责 PollerThread 和 GUI 之间的通信
+基于回调的观察者模式，支持任意 GUI 框架
 """
-from PyQt5.QtCore import QObject, pyqtSignal
+
+import threading
 
 
-class Bridge(QObject):
+class Bridge:
     """
-    PyQt 信号中心。
-    所有后台线程通过这里向 GUI 推送信号。
+    Signal center using callback-based observer pattern.
+    GUI components register callbacks, poller emits events.
     """
-    # 新消息到达 (dict: type, from_user, content, timestamp, file_path)
-    signal_message_received = pyqtSignal(dict)
-    # 消息发送成功 (str: 发送的文本)
-    signal_message_sent = pyqtSignal(str)
-    # 日志输出 (str: 内容, int: 等级 0=DEBUG 1=INFO 2=WARN 3=ERROR)
-    signal_log = pyqtSignal(str, int)
-    # 插件状态更新 (list: [(name, interval, enabled, last_run), ...])
-    signal_plugin_update = pyqtSignal(list)
-    # 轮询状态变化 (bool: True=运行中, False=已停止)
-    signal_polling_status = pyqtSignal(bool)
-
-    # 单例
     _instance = None
+
+    def __init__(self):
+        self._poller = None
+        self._callbacks = {
+            "message_received": [],
+            "message_sent": [],
+            "log": [],
+            "plugin_update": [],
+            "polling_status": [],
+        }
+        self._lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._poller = None
         return cls._instance
 
     @classmethod
     def get_instance(cls) -> "Bridge":
         return cls()
 
+    # ── 发送信号 ──────────────────────────────────────────────────────────────
+
+    def emit_message_received(self, data: dict):
+        with self._lock:
+            for cb in self._callbacks["message_received"]:
+                try:
+                    cb(data)
+                except Exception:
+                    pass
+
+    def emit_message_sent(self, text: str):
+        with self._lock:
+            for cb in self._callbacks["message_sent"]:
+                try:
+                    cb(text)
+                except Exception:
+                    pass
+
+    def emit_log(self, text: str, level: int = 1):
+        with self._lock:
+            for cb in self._callbacks["log"]:
+                try:
+                    cb(text, level)
+                except Exception:
+                    pass
+
+    def emit_plugin_update(self, plugins: list):
+        with self._lock:
+            for cb in self._callbacks["plugin_update"]:
+                try:
+                    cb(plugins)
+                except Exception:
+                    pass
+
+    def emit_polling_status(self, running: bool):
+        with self._lock:
+            for cb in self._callbacks["polling_status"]:
+                try:
+                    cb(running)
+                except Exception:
+                    pass
+
+    # ── 注册回调 ──────────────────────────────────────────────────────────────
+
+    def on_message_received(self, cb):
+        self._callbacks["message_received"].append(cb)
+        return cb
+
+    def on_message_sent(self, cb):
+        self._callbacks["message_sent"].append(cb)
+        return cb
+
+    def on_log(self, cb):
+        self._callbacks["log"].append(cb)
+        return cb
+
+    def on_plugin_update(self, cb):
+        self._callbacks["plugin_update"].append(cb)
+        return cb
+
+    def on_polling_status(self, cb):
+        self._callbacks["polling_status"].append(cb)
+        return cb
+
+    # ── Poller 管理 ───────────────────────────────────────────────────────────
+
     def set_poller(self, poller):
-        """poller 启动时注册自己"""
         self._poller = poller
-        # 立即触发一次插件列表刷新
         if poller:
-            self.signal_plugin_update.emit(poller.plugin_manager.list_plugins())
+            self.emit_plugin_update(poller.plugin_manager.list_plugins())
 
     def get_poller(self):
         return self._poller
 
 
-# 全局快捷访问
 bridge = Bridge.get_instance()

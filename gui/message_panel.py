@@ -1,121 +1,104 @@
 """
 message_panel.py - 消息日志面板
-支持 markdown 渲染，简单左对齐布局
+基于 customtkinter，支持 markdown 渲染
 """
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QMenu, QApplication, QAction
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QTextCursor, QFont, QColor
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import customtkinter as ctk
+from customtkinter import CTkTextbox
 import mistune
 
 
-class MessagePanel(QWidget):
-    COLOR_RECV = '#7289da'
-    COLOR_SENT = '#3ba55c'
-    COLOR_ERROR = '#f14c4c'
-    COLOR_SYSTEM = '#72767d'
-    COLOR_TIME = '#72767d'
+class MessagePanel(ctk.CTkFrame):
+    COLOR_RECV = "#7289da"
+    COLOR_SENT = "#3ba55c"
+    COLOR_ERROR = "#f14c4c"
+    COLOR_SYSTEM = "#72767d"
+    COLOR_TIME = "#72767d"
 
-    FONT_MONO = "Cascadia Code, Consolas, Courier New, monospace"
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._scroll_timer = QTimer(self)
-        self._scroll_timer.setSingleShot(True)
-        self._scroll_timer.timeout.connect(self._scroll_to_bottom)
-
-        self._md = mistune.create_markdown(plugins=['table'])
+        self._md = mistune.create_markdown(plugins=["table"])
         self._history_loaded = False
+        self._at_bottom = True
 
         self._setup_ui()
 
         from v2.bridge import bridge
-        bridge.signal_message_received.connect(self._on_message_received)
-        bridge.signal_message_sent.connect(self._on_message_sent)
-        bridge.signal_polling_status.connect(self._on_polling_started)
+        bridge.on_message_received(self._on_message_received)
+        bridge.on_message_sent(self._on_message_sent)
+        bridge.on_polling_status(self._on_polling_started)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(0)
+        self._textbox = CTkTextbox(self, font=("Cascadia Code", 12), wrap="word",
+                                    corner_radius=8)
+        self._textbox.configure(state="disabled")
+        self._textbox.pack(fill="both", expand=True, padx=4, pady=4)
+        self._textbox.tag_config("recv", foreground=self.COLOR_RECV)
+        self._textbox.tag_config("sent", foreground=self.COLOR_SENT)
+        self._textbox.tag_config("system", foreground=self.COLOR_SYSTEM)
+        self._textbox.tag_config("time", foreground=self.COLOR_TIME)
 
-        self._text_edit = QTextEdit()
-        self._text_edit.setReadOnly(True)
-        self._text_edit.setFont(QFont(self.FONT_MONO, 12))
-        self._text_edit.setStyleSheet("background: #1e1e1e; border: none; padding: 4px;")
-        self._text_edit.setContextMenuPolicy(Qt.CustomContextMenu)
-        self._text_edit.customContextMenuRequested.connect(self._show_context_menu)
-
-        layout.addWidget(self._text_edit)
+        # 绑定滚动事件
+        self._textbox.bind("<Configure>", self._on_configure)
 
         self._append_system("消息日志已就绪，等待连接...")
+
+    def _on_configure(self, event):
+        # 检测是否在底部
+        self._at_bottom = (
+            self._textbox.yview()[1] >= 0.999
+        )
 
     def _render_markdown(self, text: str) -> str:
         return self._md(text)
 
-    def _append_system(self, text):
-        cursor = self._text_edit.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        cursor.insertHtml(
-            f'<span style="color: {self.COLOR_SYSTEM}">--- {self._escape(text)} ---</span><br>'
-        )
-        self._schedule_scroll()
-
-    def _append_received(self, from_user: str, content: str, timestamp: str):
-        cursor = self._text_edit.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        md_html = self._render_markdown(content)
-        cursor.insertHtml(
-            f'<span style="color: {self.COLOR_TIME}">[{timestamp}]</span> '
-            f'<span style="color: {self.COLOR_RECV}">&#x25B6; {self._escape(from_user)}</span><br>'
-            f'<div style="color: {self.COLOR_RECV}; font-size: 13px; line-height: 1.5; margin: 2px 0 8px 0;">{md_html}</div>'
-        )
-        self._schedule_scroll()
-
-    def _append_sent(self, content: str, timestamp: str):
-        cursor = self._text_edit.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        md_html = self._render_markdown(content)
-        cursor.insertHtml(
-            f'<span style="color: {self.COLOR_TIME}">[{timestamp}]</span> '
-            f'<span style="color: {self.COLOR_SENT}">发送 &#x25B6;</span><br>'
-            f'<div style="color: {self.COLOR_SENT}; font-size: 13px; line-height: 1.5; margin: 2px 0 8px 0;">{md_html}</div>'
-        )
-        self._schedule_scroll()
-
-    @staticmethod
-    def _time():
-        from datetime import datetime
-        return datetime.now().strftime("%H:%M:%S")
-
-    @staticmethod
-    def _escape(text):
+    def _escape(self, text):
         return (str(text)
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;"))
 
-    def _schedule_scroll(self):
-        self._scroll_timer.start(50)
+    def _append_system(self, text):
+        self._textbox.configure(state="normal")
+        ts = self._now()
+        self._textbox.insert("end", f"[{ts}] ", "time")
+        self._textbox.insert("end", f"--- {self._escape(text)} ---", "system")
+        self._textbox.insert("end", "\n")
+        self._textbox.configure(state="disabled")
+        if self._at_bottom:
+            self._textbox.see("end")
 
-    def _scroll_to_bottom(self):
-        cursor = self._text_edit.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self._text_edit.setTextCursor(cursor)
+    def _append_received(self, from_user: str, content: str, timestamp: str):
+        self._textbox.configure(state="normal")
+        self._textbox.insert("end", f"[{timestamp}] ", "time")
+        self._textbox.insert("end", f"◀ {from_user}\n", "recv")
+        # markdown 内容
+        md_html = self._render_markdown(content)
+        # customtkinter 的 CTkTextbox 不支持 HTML，用纯文本
+        self._textbox.insert("end", content + "\n", "recv")
+        self._textbox.insert("end", "\n")
+        self._textbox.configure(state="disabled")
+        if self._at_bottom:
+            self._textbox.see("end")
 
-    def _show_context_menu(self, pos):
-        menu = QMenu(self)
-        copy_action = QAction("复制", self)
-        copy_action.triggered.connect(self._copy)
-        clear_action = QAction("清空日志", self)
-        clear_action.triggered.connect(self._text_edit.clear)
-        menu.addAction(copy_action)
-        menu.addAction(clear_action)
-        menu.exec(self._text_edit.mapToGlobal(pos))
+    def _append_sent(self, content: str, timestamp: str):
+        self._textbox.configure(state="normal")
+        self._textbox.insert("end", f"[{timestamp}] ", "time")
+        self._textbox.insert("end", "发送 ▶\n", "sent")
+        self._textbox.insert("end", content + "\n", "sent")
+        self._textbox.insert("end", "\n")
+        self._textbox.configure(state="disabled")
+        if self._at_bottom:
+            self._textbox.see("end")
 
-    def _copy(self):
-        cursor = self._text_edit.textCursor()
-        if cursor.hasSelection():
-            QApplication.instance().clipboard().setText(cursor.selectedText())
+    @staticmethod
+    def _now():
+        from datetime import datetime
+        return datetime.now().strftime("%H:%M:%S")
 
     def _on_polling_started(self, running: bool):
         if not running or self._history_loaded:
@@ -142,8 +125,11 @@ class MessagePanel(QWidget):
                 self._append_sent(text, ts)
 
     def _on_message_received(self, data: dict):
-        self._append_received(data.get("from_user", ""), data.get("content", ""),
-                               data.get("timestamp", self._time()))
+        self.after(0, lambda: self._append_received(
+            data.get("from_user", ""),
+            data.get("content", ""),
+            data.get("timestamp", self._now())
+        ))
 
     def _on_message_sent(self, content: str):
-        self._append_sent(content, self._time())
+        self.after(0, lambda: self._append_sent(content, self._now()))

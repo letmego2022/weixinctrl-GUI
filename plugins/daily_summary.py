@@ -12,15 +12,24 @@ class DailySummaryPlugin(PluginBase):
     """每日总结插件"""
 
     name = "daily_summary"
-    interval = 3600  # 每小时检查一次
+    interval = 300  # 每5分钟检查一次
     enabled = True
+
+    def __init__(self):
+        super().__init__()
+        self._sent_date: Optional[str] = None  # 今天是否已推送过
 
     def on_start(self, account, user_id: str) -> Optional[str]:
         return None
 
     def on_interval(self, account, user_id: str) -> Optional[str]:
         now = time.localtime()
+        today = datetime.date.today().isoformat()
+
         if now.tm_hour == 20 and now.tm_min < 5:
+            if self._sent_date == today:
+                return None  # 今天已推送过
+            self._sent_date = today
             return self._do_summary(account)
         return None
 
