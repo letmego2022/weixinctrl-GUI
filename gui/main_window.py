@@ -49,6 +49,7 @@ class MainWindow(ctk.CTkFrame):
 
         self._setup_ui()
         self._bind_bridge()
+        self._start_status_timer()
 
         if auto_login:
             self.after(500, self._open_login)
@@ -173,13 +174,61 @@ class MainWindow(ctk.CTkFrame):
         self._log_panel.pack(fill="x", pady=0)
         self._log_panel.pack_forget()
 
+        # ── 底部状态栏 ──
+        self._status_bar = CTkFrame(self, height=22, corner_radius=0,
+                                     fg_color=C["surface"], border_width=1,
+                                     border_color=C["border"])
+        self._status_bar.pack(fill="x", padx=6, pady=(0, 4))
+        self._status_bar.pack_propagate(False)
+
+        self._sb_conn = CTkLabel(self._status_bar, text="● 待机", font=FONT_SM,
+                                  text_color=C["dim"])
+        self._sb_conn.pack(side="left", padx=(8, 0))
+
+        self._sb_count = CTkLabel(self._status_bar, text="", font=FONT_SM,
+                                   text_color=C["dim"])
+        self._sb_count.pack(side="right", padx=(0, 8))
+
+        self._sb_uptime = CTkLabel(self._status_bar, text="", font=FONT_SM,
+                                    text_color=C["dim"])
+        self._sb_uptime.pack(side="right", padx=(0, 12))
+
+        # 消息计数 & 启动时间
+        self._msg_count = 0
+        self._start_time = None
+
     # ── bridge 回调 ─────────────────────────────────────────────────────────
 
+    def _start_status_timer(self):
+        """每秒刷新状态栏时间"""
+        self._update_status_bar()
+        self.after(1000, self._start_status_timer)
+
+    def _update_status_bar(self):
+        conn = "● 运行中" if self._running else "● 待机"
+        color = C["green"] if self._running else C["dim"]
+        self._sb_conn.configure(text=conn, text_color=color)
+
+        rest = ""
+        if self._msg_count:
+            rest += f"消息 {self._msg_count}  ·  "
+        if self._start_time:
+            delta = int(__import__('time').time() - self._start_time)
+            h, m = divmod(delta, 3600)
+            m, s = divmod(m, 60)
+            if h:
+                rest += f"{h}h{m:02d}m"
+            else:
+                rest += f"{m}m{s:02d}s"
+        self._sb_count.configure(text=rest)
+
     def _on_message_received(self, data: dict):
-        pass
+        self._msg_count += 1
+        self._update_status_bar()
 
     def _on_message_sent(self, text: str):
-        pass
+        self._msg_count += 1
+        self._update_status_bar()
 
     def _on_plugin_update(self, plugins: list):
         self.after(0, lambda: self._plugin_panel.update_plugins(plugins))
@@ -211,12 +260,15 @@ class MainWindow(ctk.CTkFrame):
     def _start_polling(self):
         if self._poller and self._poller.is_alive():
             return
+        import time
+        self._start_time = time.time()
         from v2.worker.poller import PollerThread
         self._poller = PollerThread()
         self._poller.start()
         bridge.set_poller(self._poller)
         self._running = True
         self._update_power_ui(True)
+        self._update_status_bar()
 
     def _stop_polling(self):
         if self._poller:
