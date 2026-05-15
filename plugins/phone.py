@@ -32,11 +32,21 @@ def _decode_base64_safe(encoded_str: str) -> str:
         return encoded_str
 
 
+# 模块级连接复用
+_mongo_client = None
+
+
+def _get_mongo_client():
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, maxPoolSize=5)
+    return _mongo_client
+
+
 def _search_phone(phone_number: str) -> Optional[str]:
     """查询手机号，返回格式化结果"""
-    client = None
     try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client = _get_mongo_client()
         db = client[DB_NAME]
         collection = db[INDEX_COLLECTION]
 
@@ -81,9 +91,6 @@ def _search_phone(phone_number: str) -> Optional[str]:
 
     except Exception as e:
         return f"❌ 查询失败: {e}"
-    finally:
-        if client:
-            client.close()
 
 
 class PhonePlugin(PluginBase):
@@ -117,6 +124,7 @@ class PhonePlugin(PluginBase):
         result = _search_phone(phone)
         if result:
             return result
+        self.log_info(f"未找到号码 {phone} 的记录")
         return f"❌ 未找到与 `{phone}` 相关的任何记录"
 
 

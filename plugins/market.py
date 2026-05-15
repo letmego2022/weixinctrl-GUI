@@ -189,7 +189,7 @@ class MarketPlugin(PluginBase):
 
     def _fetch_one_cached(self, market: Dict) -> Optional[Dict]:
         """获取单个指数数据（有5分钟缓存，用于用户查询）"""
-        code = market.get("tencent") or market.get("em")
+        code = market.get("tencent") or market.get("akshare")
         now = time.time()
 
         if code in self._msg_cache:
@@ -229,10 +229,8 @@ class MarketPlugin(PluginBase):
             return False
 
         # 每天只推送一次
-        if region == "US":
-            date_key = f"{now.tm_year}-{now.tm_mon}-{now.tm_mday + 1}"
-        else:
-            date_key = f"{now.tm_year}-{now.tm_mon}-{now.tm_mday}"
+        import datetime
+        date_key = datetime.date.today().isoformat()
 
         if self._pending_close.get(region) == date_key:
             return False
@@ -284,7 +282,7 @@ class MarketPlugin(PluginBase):
 
     def on_message(self, msg, account, from_user: str) -> Optional[str]:
         """收到消息时查询股市"""
-        from client import extract_text
+        from v2.client import extract_text
         text = extract_text(msg)
         if not text:
             return None
@@ -300,6 +298,7 @@ class MarketPlugin(PluginBase):
                 results.append((m, data))
 
         if not results:
+            self.log_warning("用户查询行情失败：全部指数获取失败")
             return "❌ 行情查询失败，请稍后重试"
 
         lines = ["## 📊 全球股市实时行情\n",

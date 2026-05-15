@@ -102,6 +102,19 @@ class PollerThread(threading.Thread):
         from v2.bridge import bridge
         bridge.emit_log(msg, level)
 
+    def _send_and_log(self, to_user: str, msg_text: str, context_token: str = "", log_prefix: str = "") -> bool:
+        """统一发送消息、记录日志、通知 GUI"""
+        result = send_message(self._account, to_user, msg_text, context_token)
+        ret = result.get("ret")
+        if ret == 0 or ret is None or ret == 200:
+            prefix = f"{log_prefix} " if log_prefix else ""
+            self._emit_log(f"{prefix}已发送", 1)
+            from v2.bridge import bridge
+            bridge.emit_message_sent(msg_text)
+            log_message("sent", self._user_id, to_user, "text", msg_text, context_token=context_token)
+            return True
+        return False
+
     def _classify_message(self, msg):
         """分类消息，返回 (type, content, file_path)"""
         from_user = msg.get("from_user_id", "")
@@ -155,12 +168,7 @@ class PollerThread(threading.Thread):
         plugin_responses = self.plugin_manager.on_message(msg, self._account, from_user)
         if plugin_responses:
             for plugin_name, plugin_text in plugin_responses:
-                result = send_message(self._account, from_user, plugin_text, context_token)
-                ret = result.get("ret")
-                if ret == 0 or ret is None or ret == 200:
-                    self._emit_log(f"插件 {plugin_name} 已回复", 1)
-                    bridge.emit_message_sent(plugin_text)
-                    log_message("sent", self._user_id, from_user, "text", plugin_text, context_token=context_token)
+                self._send_and_log(from_user, plugin_text, context_token, f"插件 {plugin_name}")
             return  # 插件已处理，跳过 AI
 
         # AI / 命令处理（复用 client.py 的 handle_message 逻辑）
@@ -176,24 +184,13 @@ class PollerThread(threading.Thread):
                 response_text, output_file = response, None
 
             if response_text:
-                result = send_message(self._account, from_user, response_text, context_token)
-                ret = result.get("ret")
-                if ret == 0 or ret is None or ret == 200:
-                    bridge.emit_message_sent(response_text)
-                    self._emit_log(f"已回复: {response_text[:40]}...", 1)
-                    log_message("sent", self._user_id, from_user, "text", response_text, context_token=context_token)
+                self._send_and_log(from_user, response_text, context_token)
 
     def _check_plugins(self):
         """检查并执行定时插件"""
-        from v2.bridge import bridge
         results = self.plugin_manager.on_interval(self._account, self._user_id)
         for plugin_name, msg_text in results:
-            result = send_message(self._account, self._user_id, msg_text)
-            ret = result.get("ret")
-            if ret == 0 or ret is None or ret == 200:
-                self._emit_log(f"插件 {plugin_name} 已发送提醒", 1)
-                bridge.emit_message_sent(msg_text)
-                log_message("sent", self._user_id, self._user_id, "text", msg_text)
+            self._send_and_log(self._user_id, msg_text, "", f"插件 {plugin_name}")
 
     def run(self):
         """主循环"""
@@ -207,10 +204,7 @@ class PollerThread(threading.Thread):
         # 启动时执行所有插件
         start_results = self.plugin_manager.on_start(self._account, self._user_id)
         for plugin_name, msg_text in start_results:
-            result = send_message(self._account, self._user_id, msg_text)
-            ret = result.get("ret")
-            if ret == 0 or ret is None or ret == 200:
-                self._emit_log(f"插件 {plugin_name} 已发送启动提醒", 1)
+            self._send_and_log(self._user_id, msg_text, "", f"插件 {plugin_name}")
 
         from v2.bridge import bridge
         bridge.emit_polling_status(True)
@@ -240,3 +234,4 @@ class PollerThread(threading.Thread):
     def stop(self):
         """停止轮询"""
         self._running = False
+        self.join(timeout=3)

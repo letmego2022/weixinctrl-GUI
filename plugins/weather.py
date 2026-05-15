@@ -5,9 +5,8 @@
 - 如果3小时内有降雨，主动发送提醒
 """
 import time
-from typing import Optional
-
 import requests
+from typing import Optional
 
 from . import PluginBase
 
@@ -44,7 +43,7 @@ class WeatherPlugin(PluginBase):
         return self._cached_location
 
     def _query_weather(self, lat, lon):
-        """查询天气（Open-Meteo API）"""
+        """查询天气（Open-Meteo API），返回 (data, error_msg)"""
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": lat,
@@ -57,10 +56,18 @@ class WeatherPlugin(PluginBase):
         try:
             resp = requests.get(url, params=params, timeout=10)
             if resp.status_code != 200:
-                return None
-            return resp.json()
-        except Exception:
-            return None
+                self.log_warning(f"Open-Meteo API 返回 {resp.status_code}")
+                return None, f"API 返回错误状态 {resp.status_code}"
+            return resp.json(), None
+        except requests.exceptions.ConnectionError:
+            self.log_error("天气查询失败：无法连接 Open-Meteo API")
+            return None, "网络连接失败，无法访问天气服务"
+        except requests.exceptions.Timeout:
+            self.log_error("天气查询超时")
+            return None, "天气服务响应超时，请稍后重试"
+        except Exception as e:
+            self.log_error(f"天气查询失败: {e}")
+            return None, f"天气查询异常: {e}"
 
     def _get_description(self, code):
         """天气码转中文"""
@@ -112,7 +119,7 @@ class WeatherPlugin(PluginBase):
     def _check_and_alert(self) -> Optional[str]:
         """检查天气并返回提醒"""
         lat, lon, city = self._get_location()
-        data = self._query_weather(lat, lon)
+        data, _err = self._query_weather(lat, lon)
         if not data:
             return None
 
@@ -124,16 +131,17 @@ class WeatherPlugin(PluginBase):
 
     def on_message(self, msg, account, from_user: str) -> Optional[str]:
         """处理用户消息"""
-        from client import extract_text
+        from v2.client import extract_text
         text = extract_text(msg)
 
         # 处理天气相关命令
         if text and ("天气" in text or "下雨" in text or "雨" in text):
             # 立即查询天气
             lat, lon, city = self._get_location()
-            data = self._query_weather(lat, lon)
+            data, err = self._query_weather(lat, lon)
             if not data:
-                return f"天气查询失败，请稍后重试"
+                self.log_warning(f"用户查询天气失败: {err}")
+                return f"❌ {err}"
 
             current = data.get("current", {})
             temp = current.get("temperature_2m")

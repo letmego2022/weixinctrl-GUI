@@ -1,6 +1,6 @@
 """
-main_window.py - 主窗口
-基于 customtkinter 的现代化 GUI
+main_window.py - 主窗口 (sci-fi 主题)
+基于 customtkinter 的科幻风 GUI
 """
 import sys
 import os
@@ -13,127 +13,168 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
-from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkTextbox
+from customtkinter import CTkFrame, CTkLabel, CTkButton, CTkEntry
 
 from v2.gui.message_panel import MessagePanel
 from v2.gui.plugin_panel import PluginPanel
 from v2.gui.log_panel import LogPanel
 from v2.bridge import bridge
 
+# ── Sci-fi 调色板 ──────────────────────────────────────────────────────────
+C = {
+    "bg":       "#0b0b10",
+    "surface":  "#12121c",
+    "elevated": "#181825",
+    "border":   "#1e1e30",
+    "cyan":     "#00e5ff",
+    "green":    "#00e676",
+    "purple":   "#bb86fc",
+    "red":      "#ff5252",
+    "amber":    "#ffd740",
+    "text":     "#c8ccd4",
+    "dim":      "#626278",
+    "white":    "#ffffff",
+}
+FONT = ("Cascadia Code", 12)
+FONT_SM = ("Cascadia Code", 10)
+FONT_BOLD = ("Cascadia Code", 12, "bold")
 
-class MainWindow(ctk.CTk):
-    def __init__(self):
-        super().__init__()
 
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-
-        self.title("微信控制台 v2")
-        self.geometry("1100x700")
-        self.minsize(900, 600)
+class MainWindow(ctk.CTkFrame):
+    def __init__(self, master=None):
+        super().__init__(master, fg_color=C["bg"])
 
         self._poller = None
         self._running = False
 
         self._setup_ui()
+        self._bind_bridge()
 
-        # 注册 bridge 回调
+    def _bind_bridge(self):
         bridge.on_message_received(self._on_message_received)
         bridge.on_message_sent(self._on_message_sent)
         bridge.on_log(self._on_log)
         bridge.on_plugin_update(self._on_plugin_update)
         bridge.on_polling_status(self._on_polling_status)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+    # ── UI 构建 ─────────────────────────────────────────────────────────────
 
     def _setup_ui(self):
-        # ── 顶部工具栏 ──────────────────────────────────────────────────────
-        toolbar = CTkFrame(self, height=48, corner_radius=0, fg_color="#161b22")
-        toolbar.pack(fill="x", padx=0, pady=0)
-        toolbar.pack_propagate(False)
+        self._build_toolbar()
+        self._build_main_area()
+        self._build_bottom_area()
 
-        # 状态标签
-        self._status_label = CTkLabel(toolbar, text="⚫ 未启动", font=("Segoe UI", 13, "bold"))
-        self._status_label.pack(side="left", padx=(12, 0))
+    def _build_toolbar(self):
+        bar = CTkFrame(self, height=42, corner_radius=0,
+                       fg_color=C["surface"], border_width=1, border_color=C["border"])
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
 
-        # 右侧按钮组
-        btn_frame = CTkFrame(toolbar, fg_color="transparent")
-        btn_frame.pack(side="right", padx=8)
+        # 左侧：状态指示灯 + 标题
+        left = CTkFrame(bar, fg_color="transparent")
+        left.pack(side="left", padx=(10, 0))
 
-        self._login_btn = CTkButton(
-            btn_frame, text="🔐 登录微信", width=110, height=28,
-            command=self._open_login, corner_radius=6,
-            fg_color="#21262d", hover_color="#30363d", text_color="#c9d1d9"
+        self._status_dot = CTkLabel(left, text="●", font=("Consolas", 16),
+                                    text_color=C["dim"])
+        self._status_dot.pack(side="left")
+
+        self._status_label = CTkLabel(left, text=" 待机", font=FONT_BOLD,
+                                      text_color=C["text"])
+        self._status_label.pack(side="left", padx=(2, 0))
+
+        ver = CTkLabel(bar, text="v2.0", font=FONT_SM, text_color=C["dim"])
+        ver.pack(side="left", padx=(6, 0))
+
+        # 右侧：快捷按钮
+        right = CTkFrame(bar, fg_color="transparent")
+        right.pack(side="right", padx=6)
+
+        for text, cmd, w in [
+            ("≡ 插件", self._toggle_plugin, 68),
+            ("◷ 日志", self._toggle_log, 68),
+        ]:
+            CTkButton(right, text=text, width=w, height=26, command=cmd,
+                      corner_radius=3, font=FONT_SM,
+                      fg_color="transparent", hover_color=C["elevated"],
+                      text_color=C["dim"], border_width=0
+                      ).pack(side="left", padx=1)
+
+        # 登录
+        CTkButton(right, text="🔐 登录", width=64, height=26,
+                  command=self._open_login, corner_radius=3, font=FONT_SM,
+                  fg_color="transparent", hover_color=C["elevated"],
+                  text_color=C["dim"], border_width=0
+                  ).pack(side="left", padx=1)
+
+        # 电源按钮
+        self._power_btn = CTkButton(
+            right, text="▶ 启动", width=68, height=26, command=self._toggle_polling,
+            corner_radius=3, font=FONT_SM,
+            fg_color="transparent", hover_color=C["elevated"],
+            text_color=C["cyan"], border_width=1, border_color=C["cyan"]
         )
-        self._login_btn.pack(side="left", padx=2)
+        self._power_btn.pack(side="left", padx=(4, 2))
 
-        self._plugin_btn = CTkButton(
-            btn_frame, text="📦 插件", width=80, height=28,
-            command=self._toggle_plugin, corner_radius=6,
-            fg_color="#21262d", hover_color="#30363d", text_color="#c9d1d9"
-        )
-        self._plugin_btn.pack(side="left", padx=2)
+        # 退出
+        CTkButton(right, text="✕", width=30, height=26, command=self._quit,
+                  corner_radius=3, font=FONT_SM,
+                  fg_color="transparent", hover_color="#2a1515",
+                  text_color=C["red"], border_width=0
+                  ).pack(side="left", padx=1)
 
-        self._log_btn = CTkButton(
-            btn_frame, text="📋 日志", width=80, height=28,
-            command=self._toggle_log, corner_radius=6,
-            fg_color="#21262d", hover_color="#30363d", text_color="#c9d1d9"
-        )
-        self._log_btn.pack(side="left", padx=2)
+    def _build_main_area(self):
+        body = CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=6, pady=(6, 2))
 
-        self._toggle_btn = CTkButton(
-            btn_frame, text="▶ 启动", width=80, height=28,
-            command=self._toggle_polling, corner_radius=6,
-            fg_color="#1f6feb", hover_color="#1669d4", text_color="#fff"
-        )
-        self._toggle_btn.pack(side="left", padx=2)
+        # 消息面板：细边框发光效果
+        msg_frame = CTkFrame(body, fg_color=C["surface"],
+                             border_width=1, border_color=C["border"])
+        msg_frame.pack(side="left", fill="both", expand=True, padx=(0, 3))
 
-        # ── 中间主区域（消息面板 + 插件面板） ─────────────────────────────────
-        main_area = CTkFrame(self, fg_color="#0d1117")
-        main_area.pack(fill="both", expand=True, padx=4, pady=(4, 2))
+        self._message_panel = MessagePanel(master=msg_frame)
+        self._message_panel.pack(fill="both", expand=True)
 
-        # 消息面板（始终显示）
-        self._message_panel = MessagePanel(master=main_area)
-        self._message_panel.pack(side="left", fill="both", expand=True, padx=(0, 2))
-
-        # 插件面板（默认隐藏，右侧）
-        self._plugin_panel = PluginPanel(master=main_area, width=260)
-        self._plugin_panel.pack(side="right", fill="y", padx=(2, 0))
+        # 插件面板
+        self._plugin_panel = PluginPanel(master=body, width=250)
+        self._plugin_panel.pack(side="right", fill="y", padx=(3, 0))
         self._plugin_panel.pack_forget()
 
-        # ── 底部（输入框 + 日志面板） ────────────────────────────────────────
-        bottom_area = CTkFrame(self, fg_color="#0d1117")
-        bottom_area.pack(fill="x", padx=4, pady=(2, 4))
+    def _build_bottom_area(self):
+        bottom = CTkFrame(self, fg_color="transparent")
+        bottom.pack(fill="x", padx=6, pady=(2, 6))
 
-        # 输入框
-        input_frame = CTkFrame(bottom_area, height=50, corner_radius=8, fg_color="#161b22")
-        input_frame.pack(fill="x", pady=(0, 4))
+        # 输入栏
+        input_frame = CTkFrame(bottom, height=44, corner_radius=4,
+                               fg_color=C["surface"],
+                               border_width=1, border_color=C["border"])
+        input_frame.pack(fill="x", pady=(0, 2))
         input_frame.pack_propagate(False)
 
         self._input_entry = CTkEntry(
-            input_frame, placeholder_text="输入消息后按 Enter 发送...",
-            font=("Segoe UI", 13), corner_radius=6,
-            fg_color="#0d1117", border_width=0
+            input_frame, placeholder_text="输入消息，Enter 发送…",
+            font=FONT, corner_radius=0,
+            fg_color="transparent", border_width=0,
+            placeholder_text_color=C["dim"]
         )
-        self._input_entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=6)
+        self._input_entry.pack(side="left", fill="x", expand=True, padx=(10, 4), pady=6)
         self._input_entry.bind("<Return>", lambda e: self._send_message())
 
         self._send_btn = CTkButton(
-            input_frame, text="发送", width=70, height=32,
-            command=self._send_message, corner_radius=6,
-            fg_color="#1f6feb", hover_color="#1669d4", text_color="#fff"
+            input_frame, text="↵", width=40, height=30,
+            command=self._send_message, corner_radius=3, font=("Consolas", 14),
+            fg_color=C["cyan"], hover_color="#00c8e0", text_color=C["bg"]
         )
-        self._send_btn.pack(side="right", padx=6, pady=8)
+        self._send_btn.pack(side="right", padx=4, pady=6)
 
-        # 日志面板（默认隐藏）
-        self._log_panel = LogPanel(master=bottom_area, height=150, corner_radius=8)
+        # 日志面板
+        self._log_panel = LogPanel(master=bottom, height=140, corner_radius=4)
         self._log_panel.pack(fill="x", pady=0)
         self._log_panel.pack_forget()
 
-    # ── 状态栏回调 ───────────────────────────────────────────────────────────
+    # ── bridge 回调 ─────────────────────────────────────────────────────────
 
     def _on_message_received(self, data: dict):
-        self.after(0, lambda: None)  # 已在 panel 处理
+        pass
 
     def _on_message_sent(self, text: str):
         pass
@@ -145,18 +186,22 @@ class MainWindow(ctk.CTk):
         self.after(0, lambda: self._plugin_panel.update_plugins(plugins))
 
     def _on_polling_status(self, running: bool):
-        self.after(0, lambda: self._update_polling_ui(running))
+        self.after(0, lambda: self._update_power_ui(running))
 
-    def _update_polling_ui(self, running: bool):
+    def _update_power_ui(self, running: bool):
         self._running = running
         if running:
-            self._status_label.configure(text="⚡ 运行中")
-            self._toggle_btn.configure(text="■ 停止", fg_color="#c93c3c", hover_color="#a83232")
+            self._status_dot.configure(text="●", text_color=C["green"])
+            self._status_label.configure(text=" 运行中")
+            self._power_btn.configure(text="■ 停止", text_color=C["red"],
+                                      border_color=C["red"])
         else:
-            self._status_label.configure(text="⚫ 已停止")
-            self._toggle_btn.configure(text="▶ 启动", fg_color="#1f6feb", hover_color="#1669d4")
+            self._status_dot.configure(text="●", text_color=C["dim"])
+            self._status_label.configure(text=" 待机")
+            self._power_btn.configure(text="▶ 启动", text_color=C["cyan"],
+                                      border_color=C["cyan"])
 
-    # ── 控件回调 ─────────────────────────────────────────────────────────────
+    # ── 操作 ─────────────────────────────────────────────────────────────────
 
     def _toggle_polling(self):
         if self._running:
@@ -167,68 +212,72 @@ class MainWindow(ctk.CTk):
     def _start_polling(self):
         if self._poller and self._poller.is_alive():
             return
-
         from v2.worker.poller import PollerThread
         self._poller = PollerThread()
         self._poller.start()
         bridge.set_poller(self._poller)
         self._running = True
-        self._update_polling_ui(True)
+        self._update_power_ui(True)
 
     def _stop_polling(self):
         if self._poller:
             self._poller._running = False
+            self._poller.join(timeout=3)
         self._running = False
-        self._update_polling_ui(False)
+        self._update_power_ui(False)
 
     def _send_message(self):
         text = self._input_entry.get().strip()
         if not text:
             return
-
         if not self._running:
             self._input_entry.delete(0, "end")
             return
 
-        from v2.client import send_message
-        account = self._poller._account
-        user_id = self._poller._user_id
+        self._input_entry.delete(0, "end")
+        self._send_btn.configure(state="disabled")
 
-        result = send_message(account, user_id, text, "")
-        ret = result.get("ret")
+        def do_send():
+            from v2.client import send_message
+            account = self._poller._account
+            user_id = self._poller._user_id
+            result = send_message(account, user_id, text, "")
+            ret = result.get("ret")
+            self.after(0, lambda: self._send_btn.configure(state="normal"))
+            if ret == 0 or ret is None:
+                bridge.emit_message_sent(text)
+            else:
+                self.after(0, lambda: self._log_panel.append(
+                    f"发送失败: {result.get('errmsg', '未知')}", 3))
 
-        if ret == 0 or ret is None:
-            bridge.emit_message_sent(text)
-            self._input_entry.delete(0, "end")
-        else:
-            self._log_panel.append(f"发送失败: {result.get('errmsg', '未知错误')}", 3)
+        threading.Thread(target=do_send, daemon=True).start()
 
     def _toggle_plugin(self):
         if self._plugin_panel.winfo_viewable():
             self._plugin_panel.pack_forget()
-            self._plugin_btn.configure(text="📦 插件")
         else:
-            self._plugin_panel.pack(side="right", fill="y", padx=(2, 0))
-            self._plugin_btn.configure(text="📦 隐藏")
+            self._plugin_panel.pack(side="right", fill="y", padx=(3, 0))
 
     def _toggle_log(self):
         if self._log_panel.winfo_viewable():
             self._log_panel.pack_forget()
-            self._log_btn.configure(text="📋 日志")
         else:
-            self._log_panel.pack(fill="x", pady=(0, 0))
-            self._log_btn.configure(text="📋 隐藏")
+            self._log_panel.pack(fill="x")
+
+    def _quit(self):
+        import os
+        self._stop_polling()
+        os._exit(0)
 
     def _open_login(self):
-        """用默认浏览器打开微信登录页面"""
+        import http.client
+
         FIXED_BASE_URL = "https://ilinkai.weixin.qq.com"
         ILINK_APP_ID = "bot"
 
         def build_client_version(version):
             parts = list(map(int, version.split(".")))
             return ((parts[0] & 0xff) << 16) | ((parts[1] & 0xff) << 8) | (parts[2] & 0xff)
-
-        import http.client
 
         def http_get(url, headers=None):
             u = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(url)
@@ -250,23 +299,14 @@ class MainWindow(ctk.CTk):
                     pass
             return {}
 
-        def random_uint32_base64():
-            uint32 = random.getrandbits(32)
-            return base64.b64encode(str(uint32).encode("utf-8")).decode("utf-8")
-
         try:
             url = f"{FIXED_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3"
-            headers = {"X-WECHAT-UIN": random_uint32_base64()}
-            resp = http_get(url, headers)
+            resp = http_get(url, {"X-WECHAT-UIN": base64.b64encode(str(random.getrandbits(32)).encode()).decode()})
             qr_url = resp.get("qrcode_img_content") or resp.get("qrcode")
             if qr_url:
                 webbrowser.open(qr_url)
-                self._log_panel.append("已用浏览器打开登录页面，请在浏览器中扫码登录", 1)
+                self._log_panel.append("已打开扫码登录页面", 1)
             else:
-                self._log_panel.append("获取登录链接失败，请稍后重试", 2)
+                self._log_panel.append("获取登录链接失败", 2)
         except Exception as e:
-            self._log_panel.append(f"打开登录页面失败: {e}", 3)
-
-    def _on_close(self):
-        self._stop_polling()
-        self.destroy()
+            self._log_panel.append(f"登录异常: {e}", 3)
