@@ -48,8 +48,11 @@ Thumbs.db
 # Node（登录脚本用，但 node_modules 不需要）
 node_modules/
 
+# Env
+.env
+
 # Temp
 tmp/
 temp/
 
-received/
+received/minimax_output/
