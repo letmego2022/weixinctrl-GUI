@@ -762,7 +762,7 @@ def is_user_message(msg):
 
 
 def _load_recent_history(limit=6):
-    """加载最近 limit 条历史消息，转换为 Ollama 格式"""
+    """加载最近 limit 条历史消息"""
     log = load_chat_log()
     msgs = log.get("messages", [])
     history = []
@@ -784,9 +784,34 @@ def _load_recent_history(limit=6):
     return history
 
 
-# ── Layer 4: Ollama AI ────────────────────────────────────────────────────────
+# ── Layer 4: MiniMax AI ────────────────────────────────────────────────────────
+def _get_minimax_key():
+    """读取 .env 中的 MiniMax API Key"""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("ANTHROPIC_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _get_minimax_base():
+    """读取 .env 中的 MiniMax Base URL"""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("ANTHROPIC_BASE_URL="):
+                return line.split("=", 1)[1].strip()
+    return "https://api.minimaxi.com/anthropic"
+
+
 def ai_chat(user_message, max_tokens=500, system_prompt=None):
-    """使用本地 Ollama AI 对话，带历史上下文"""
+    """使用 MiniMax M2.7 AI 对话，带历史上下文"""
+    api_key = _get_minimax_key()
+    base_url = _get_minimax_base()
+
     if system_prompt is None:
         system_prompt = (
             "你是用户的私人助手，说话简洁、口语化，像朋友聊天。\n"
@@ -796,24 +821,38 @@ def ai_chat(user_message, max_tokens=500, system_prompt=None):
             "回答尽量简短，不超过200字。\n"
             "禁止啰嗦，禁止废话。"
         )
+
     try:
         history = _load_recent_history(limit=6)
-        messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": user_message}]
+        messages = history + [{"role": "user", "content": user_message}]
+
+        payload = {
+            "model": "MiniMax-M2.7",
+            "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
+            "system": system_prompt,
+            "messages": messages,
+        }
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         resp = requests.post(
-            "http://localhost:11434/v1/chat/completions",
-            headers={"Content-Type": "application/json"},
-            json={
-                "model": "gpt-oss:120b-cloud",
-                "messages": messages,
-                "max_tokens": max_tokens,
-            },
+            f"{base_url}/v1/messages",
+            headers=headers,
+            json=payload,
             timeout=(10, 120),
         )
         if resp.status_code != 200:
             return f"AI 错误: {resp.status_code}"
+
         data = resp.json()
-        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return reply.strip() if reply else "..."
+        content = data.get("content", "")
+        if isinstance(content, list):
+            content = "".join(
+                b.get("text", "") for b in content if b.get("type") == "text"
+            )
+        return content.strip() if content else "..."
     except requests.exceptions.Timeout:
         return "请求超时了"
     except requests.exceptions.ConnectionError:
@@ -936,7 +975,7 @@ def _get_latest_file(directory):
 
 
 def _llm_generate_plan(user_prompt):
-    """用本地 Ollama 生成 plan.md"""
+    """用 MiniMax M2.7 生成 plan.md"""
     system = """\
 你是一个计划生成器。根据用户需求生成 plan.md。
 
@@ -974,31 +1013,40 @@ plan.md 格式：
         processed_dir=PROCESSED_DIR,
     )
 
+    api_key = _get_minimax_key()
+    base_url = _get_minimax_base()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     try:
         resp = requests.post(
-            "http://localhost:11434/v1/chat/completions",
-            headers={"Content-Type": "application/json"},
+            f"{base_url}/v1/messages",
+            headers=headers,
             json={
-                "model": "gpt-oss:120b-cloud",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_prompt},
-                ],
+                "model": "MiniMax-M2.7",
                 "max_tokens": 1000,
+                "thinking": {"type": "disabled"},
+                "system": system,
+                "messages": [{"role": "user", "content": user_prompt}],
             },
             timeout=(10, 120),
         )
         if resp.status_code != 200:
-            return None, f"Ollama 错误: {resp.status_code}"
+            return None, f"AI 错误: {resp.status_code}"
         data = resp.json()
-        plan = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        return plan, None
+        content = data.get("content", "")
+        if isinstance(content, list):
+            content = "".join(
+                b.get("text", "") for b in content if b.get("type") == "text"
+            )
+        return content.strip(), None
     except requests.exceptions.Timeout:
-        return None, "Ollama 请求超时"
+        return None, "AI 请求超时"
     except requests.exceptions.ConnectionError:
-        return None, "Ollama 连接失败"
+        return None, "AI 服务连接失败"
     except Exception as e:
-        return None, f"Ollama 异常: {e}"
+        return None, f"AI 异常: {e}"
 
 
 def _template_generate_plan(user_prompt):
