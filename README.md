@@ -25,32 +25,38 @@
 - 媒体文件自动下载，CDN + AES-128 解密
 - 聊天记录按天存为 OpenAI 兼容 JSON，可喂给任意 AI 训练
 
-### AI 对话
-- 接入 **Ollama** 本地模型，消息来了自动回复
-- 自动加载最近 6 条上下文，对话有记忆
-- 插件优先：先匹配插件，没命中才走 AI
+### AI 意图分发
+
+所有非 `/` 命令消息先经过 **M2.7 意图分类**，自动路由到对应插件：
+
+```
+"今天热不热"    → weather  → 天气插件
+"纳斯达克怎么样" → market   → 股市插件
+"美元汇率多少"  → exchange → 汇率插件
+"帮我写首歌"    → music    → 音乐插件
+"搜一下AI动态"  → search   → 搜索插件
+"你好啊"       → chat     → AI 对话
+```
+
+`/` 开头的命令消息直通插件，不走分类，零延迟。
 
 ### 插件系统
 
-| 插件 | 怎么做 | 触发 |
-|------|--------|------|
-| `weather` | Open-Meteo 实时预报 | 问「天气」或「下雨了吗」；每 3h 降雨预警 |
-| `market` | 腾讯财经 + akshare，10 个全球指数 | 问「股市」或「纳斯达克怎么样」；收盘自动推送 |
-| `cmb_exchange` | 招行官方 API 美元牌价 | 问「汇率」或「换美元」；每天 8:00 推送 |
-| `phone` | MongoDB 索引反查 | `/phone 13800138000` |
-| `cmd` | Claude Code CLI 异步执行 | `/cmd 帮我把桌面整理一下` |
-| `cc` | Claude Code 读写 Obsidian 知识库 | `/cc 搜索关于微服务的笔记` |
-| `daily_summary` | AI 生成结构化总结 | 每天 20:00 自动推送，4 大分类 |
-| `minimax_music` | MiniMax AI 音乐创作 | `/music 一首关于夏天的轻快歌曲` |
-| `web_search` | 联网搜索 + AI 总结 | `/search 2026年AI最新动态` |
+| 插件 | 能力 | 触发 |
+|------|------|------|
+| `weather` | Open-Meteo 实时预报 + 降雨预警 | 自然语言 / 每 3h |
+| `market` | 10 个全球指数（腾讯财经 + akshare） | 自然语言 / 收盘推送 |
+| `cmb_exchange` | 招行美元牌价 | 自然语言 / 每天 8:00 |
+| `minimax_music` | AI 音乐创作 | 自然语言 或 `/music` |
+| `web_search` | 联网搜索 + AI 总结 | 自然语言 或 `/search` |
+| `phone` | MongoDB 号码反查 | `/phone 138...` |
+| `cmd` | Claude Code CLI | `/cmd <需求>` |
+| `cc` | Claude Code + Obsidian | `/cc <需求>` |
+| `daily_summary` | AI 每日总结 | 每天 20:00 |
 
 ### AI 引擎
 
-全部 AI 调用使用 **MiniMax M2.7**（Anthropic 兼容接口），无需本地 GPU：
-- 普通对话、每日总结、命令计划生成
-- 音乐歌词创作、搜索结果总结
-
-在 `.env` 中配置 API Key 即可使用。
+全部 AI 调用使用 **MiniMax M2.7**，无需本地 GPU——对话、意图分类、每日总结、音乐歌词、搜索结果总结。`.env` 配置 API Key 即可。
 
 在聊天框输入 `/help` 查看所有命令：
 
@@ -94,10 +100,13 @@ python main.py                     # 启动（未登录自动弹扫码页）
 ┌───────────────────▼─────────────────────────────┐
 │           worker/poller.py  (后台轮询)            │
 │                                                   │
-│   get_updates ──► 消息分类 ──► PluginManager       │
-│                      │           ├ 关键词/命令匹配  │
-│                      │           ├ 定时推送         │
-│                      └─ 未命中 ──► AI 兜底回复     │
+│   get_updates ──► / 命令? ──► PluginManager         │
+│                      │ 否                            │
+│                      ├─► classify_intent(M2.7)       │
+│                      │   ├ weather/market/exchange   │
+│                      │   ├ music/search → 插件       │
+│                      │   └ chat → AI 对话            │
+│                      ├ 定时推送                      │
 └───────────────────┬─────────────────────────────┘
                     │
 ┌───────────────────▼─────────────────────────────┐
