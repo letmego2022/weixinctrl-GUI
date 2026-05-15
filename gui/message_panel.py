@@ -3,7 +3,7 @@ message_panel.py - 消息日志面板 (sci-fi 终端风格)
 """
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
@@ -19,7 +19,7 @@ FONT      = ("Cascadia Code", 11)
 FONT_SM   = ("Cascadia Code", 10)
 SEP_W     = 56
 GAP_MIN   = 5       # 分钟：超过此间隔→显示时间头
-FOLD_H    = 2       # 小时：超过此时间→可折叠
+SHOW_N    = 6       # 折叠模式下始终展示最新 N 条
 
 
 class MessagePanel(ctk.CTkFrame):
@@ -87,28 +87,19 @@ class MessagePanel(ctk.CTkFrame):
             self._textbox.configure(state="disabled")
             return
 
-        # 折叠阈值
-        cutoff = datetime.now() - timedelta(hours=FOLD_H)
-
-        # 统计折叠的条数
-        if self._folded:
-            self._fold_count = sum(1 for m in self._buffer
-                                   if m[3] and m[3] < cutoff)
+        # 折叠模式：只展示最新 SHOW_N 条
+        total = len(self._buffer)
+        if self._folded and total > SHOW_N:
+            visible = self._buffer[-SHOW_N:]
+            self._fold_count = total - SHOW_N
         else:
+            visible = self._buffer
             self._fold_count = 0
 
         last_ts = None
-        rendered = 0
-        folded = 0
 
-        for role, name, content, ts_dt in self._buffer:
-            # 折叠模式：跳过旧消息
-            if self._folded and ts_dt and ts_dt < cutoff:
-                folded += 1
-                continue
-
+        for role, name, content, ts_dt in visible:
             ts_str = ts_dt.strftime("%H:%M:%S") if ts_dt else ""
-            rendered += 1
 
             # 时间头判断
             show_head = True
@@ -136,12 +127,6 @@ class MessagePanel(ctk.CTkFrame):
 
             self._insl()
             last_ts = ts_dt
-
-        # 折叠提示行
-        if folded > 0:
-            self._insl()
-            self._insl(f"▌ ━━ {folded} 条 {FOLD_H}小时前的消息已折叠 ━━", "sys")
-            self._insl()
 
         # 按钮
         if self._fold_count > 0:
