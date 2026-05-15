@@ -129,41 +129,43 @@ class WeatherPlugin(PluginBase):
 
         return f"## 🌧️ {city} 天气提醒\n\n未来3小时有降雨：\n\n| 时间 | 天气 | 降水概率 | 温度 |\n|------|------|----------|------|\n" + "\n".join(alerts)
 
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """被 AI 意图分类路由调用，直接查询天气"""
+        lat, lon, city = self._get_location()
+        data, err = self._query_weather(lat, lon)
+        if not data:
+            self.log_warning(f"天气查询失败: {err}")
+            return f"❌ {err}"
+
+        current = data.get("current", {})
+        temp = current.get("temperature_2m")
+        humidity = current.get("relative_humidity_2m")
+        weather_code = current.get("weather_code")
+        desc = self._get_description(weather_code) if weather_code is not None else "未知"
+
+        alerts = self._check_rain(data)
+        rain_rows = ""
+        if alerts:
+            rain_rows = "| 未来3小时 | 天气 | 降水概率 | 温度 |\n" + \
+                        "|------|--------|----------|------|\n" + \
+                        "\n".join(alerts) + "\n"
+
+        return (
+            f"## 📍 {city} 当前天气\n\n"
+            f"| 项目 | 数值 |\n"
+            f"|------|------|\n"
+            f"| 🌡️ 温度 | {temp}°C |\n"
+            f"| 💧 湿度 | {humidity}% |\n"
+            f"| ☁️ 天气 | {desc} |\n"
+            + (f"\n{rain_rows}" if rain_rows else "")
+        )
+
     def on_message(self, msg, account, from_user: str) -> Optional[str]:
-        """处理用户消息"""
+        """处理用户消息（关键词匹配，保留兼容）"""
         from v2.client import extract_text
         text = extract_text(msg)
 
-        # 处理天气相关命令
-        if text and ("天气" in text or "下雨" in text or "雨" in text):
-            # 立即查询天气
-            lat, lon, city = self._get_location()
-            data, err = self._query_weather(lat, lon)
-            if not data:
-                self.log_warning(f"用户查询天气失败: {err}")
-                return f"❌ {err}"
-
-            current = data.get("current", {})
-            temp = current.get("temperature_2m")
-            humidity = current.get("relative_humidity_2m")
-            weather_code = current.get("weather_code")
-            desc = self._get_description(weather_code) if weather_code is not None else "未知"
-
-            alerts = self._check_rain(data)
-            rain_rows = ""
-            if alerts:
-                rain_rows = "| 🌧️ 未来3小时 | 天气 | 降水概率 | 温度 |\n" + \
-                            "|------|--------|----------|------|\n" + \
-                            "\n".join(alerts)
-
-            return (
-                f"## 📍 {city} 当前天气\n\n"
-                f"| 项目 | 数值 |\n"
-                f"|------|------|\n"
-                f"| 🌡️ 温度 | {temp}°C |\n"
-                f"| 💧 湿度 | {humidity}% |\n"
-                f"| ☁️ 天气 | {desc} |\n"
-                + (f"\n{rain_rows}\n" if rain_rows else "")
-            )
+        if text and ("天气" in text or "下雨" in text):
+            return self.on_query(text)
 
         return None

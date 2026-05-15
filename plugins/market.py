@@ -280,17 +280,8 @@ class MarketPlugin(PluginBase):
     def on_interval(self, account, user_id: str) -> Optional[str]:
         return self._do_push()
 
-    def on_message(self, msg, account, from_user: str) -> Optional[str]:
-        """收到消息时查询股市"""
-        from v2.client import extract_text
-        text = extract_text(msg)
-        if not text:
-            return None
-
-        keywords = ["股市", "指数", "市场", "行情", "纳指", "日经", "恒生", "上证", "大盘"]
-        if not any(k in text for k in keywords):
-            return None
-
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """被 AI 意图分类路由调用"""
         results = []
         for m in MARKETS:
             data = self._fetch_one_cached(m)
@@ -298,7 +289,7 @@ class MarketPlugin(PluginBase):
                 results.append((m, data))
 
         if not results:
-            self.log_warning("用户查询行情失败：全部指数获取失败")
+            self.log_warning("行情查询失败：全部指数获取失败")
             return "❌ 行情查询失败，请稍后重试"
 
         lines = ["## 📊 全球股市实时行情\n",
@@ -308,6 +299,19 @@ class MarketPlugin(PluginBase):
             lines.append(self._format_markdown(m, data))
 
         return "\n".join(lines)
+
+    def on_message(self, msg, account, from_user: str) -> Optional[str]:
+        """收到消息时查询股市（关键词匹配，保留兼容）"""
+        from v2.client import extract_text
+        text = extract_text(msg)
+        if not text:
+            return None
+
+        keywords = ["股市", "指数", "行情", "纳指", "日经", "恒生", "上证", "大盘"]
+        if not any(k in text for k in keywords):
+            return None
+
+        return self.on_query(text)
 
 
 if __name__ == "__main__":

@@ -68,6 +68,13 @@ class PluginBase(ABC):
         """
         pass
 
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """
+        被 AI 意图分类路由调用（默认不处理）
+        返回: 消息文本，None 表示不处理
+        """
+        return None
+
     def on_message(self, msg, account, from_user: str) -> Optional[str]:
         """
         收到消息时执行（默认不处理）

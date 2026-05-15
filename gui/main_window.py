@@ -41,7 +41,7 @@ FONT_BOLD = ("Cascadia Code", 12, "bold")
 
 
 class MainWindow(ctk.CTkFrame):
-    def __init__(self, master=None):
+    def __init__(self, master=None, auto_login=False):
         super().__init__(master, fg_color=C["bg"])
 
         self._poller = None
@@ -50,10 +50,12 @@ class MainWindow(ctk.CTkFrame):
         self._setup_ui()
         self._bind_bridge()
 
+        if auto_login:
+            self.after(500, self._open_login)
+
     def _bind_bridge(self):
         bridge.on_message_received(self._on_message_received)
         bridge.on_message_sent(self._on_message_sent)
-        bridge.on_log(self._on_log)
         bridge.on_plugin_update(self._on_plugin_update)
         bridge.on_polling_status(self._on_polling_status)
 
@@ -178,9 +180,6 @@ class MainWindow(ctk.CTkFrame):
 
     def _on_message_sent(self, text: str):
         pass
-
-    def _on_log(self, text: str, level: int):
-        self.after(0, lambda: self._log_panel.append(text, level))
 
     def _on_plugin_update(self, plugins: list):
         self.after(0, lambda: self._plugin_panel.update_plugins(plugins))

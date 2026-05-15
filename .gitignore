@@ -38,6 +38,7 @@ env/
 
 # Logs
 *.log
+logs/
 chat_logs/*.json
 !chat_logs/.gitkeep
 
