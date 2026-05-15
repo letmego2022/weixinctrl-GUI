@@ -168,18 +168,54 @@ class PollerThread(threading.Thread):
             "context_token": context_token,
         })
 
-        # 插件处理
-        plugin_responses = self.plugin_manager.on_message(msg, self._account, from_user)
-        if plugin_responses:
-            for plugin_name, plugin_text in plugin_responses:
-                self._send_and_log(from_user, plugin_text, context_token, f"插件 {plugin_name}")
-            return  # 插件已处理，跳过 AI
-
-        # AI / 命令处理（复用 client.py 的 handle_message 逻辑）
         text = extract_text(msg)
         if not text:
             return
 
+        is_command = text.startswith("/")
+
+        # ── 快速通道：/ 命令直接走插件匹配 ──
+        if is_command:
+            plugin_responses = self.plugin_manager.on_message(msg, self._account, from_user)
+            if plugin_responses:
+                for plugin_name, plugin_text in plugin_responses:
+                    self._send_and_log(from_user, plugin_text, context_token, f"插件 {plugin_name}")
+                return
+
+        # ── 智能通道：非 / 消息 → AI 意图分类 → 路由到对应插件 ──
+        if not is_command:
+            from v2.client import classify_intent
+            intent = classify_intent(text)
+            self._emit_log(f"意图分类: {intent} ← \"{text[:30]}\"", 1)
+
+            plugin_map = {
+                "weather": "weather",
+                "market": "market",
+                "exchange": "cmb_exchange",
+                "music": "minimax_music",
+                "search": "web_search",
+            }
+
+            if intent == "help":
+                from v2.client import run_command
+                result = run_command("help")
+                if result:
+                    self._send_and_log(from_user, result, context_token, "帮助")
+                    return
+
+            if intent in plugin_map:
+                plugin = self.plugin_manager.get_plugin(plugin_map[intent])
+                if plugin and hasattr(plugin, "on_query"):
+                    result = plugin.on_query(text, self._account, from_user, context_token)
+                    if result:
+                        self._send_and_log(from_user, result, context_token, f"插件 {plugin.name}")
+                        return
+                result = plugin.on_message(msg, self._account, from_user) if plugin else None
+                if result:
+                    self._send_and_log(from_user, result, context_token, f"插件 {plugin.name}")
+                    return
+
+        # ── 兜底：普通 AI 对话 ──
         response = client_handle_message(text, self._account, from_user, context_token)
         if response:
             if isinstance(response, tuple):

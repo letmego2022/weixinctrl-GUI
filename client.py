@@ -784,33 +784,63 @@ def _load_recent_history(limit=6):
     return history
 
 
+def classify_intent(text: str) -> str:
+    """AI 意图分类，返回插件名或 'chat'"""
+    api_key = minimax_key()
+    url = minimax_url()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    prompt = f"""你是意图分类器。分析用户消息，只输出一个标签：
+
+weather — 查天气、气温、降雨、冷热、穿衣建议
+market — 查股市、指数、行情、纳斯达克、上证、恒生
+exchange — 查汇率、美元、换汇、人民币
+music — 想生成音乐或歌词
+search — 想搜索最新信息、新闻
+help — 询问有什么功能、帮助、能做什么、怎么用
+chat — 其他（闲聊、知识问答等）
+
+只输出标签，不解释。
+
+用户消息：{text}"""
+
+    try:
+        resp = requests.post(
+            url,
+            headers=headers,
+            json={
+                "model": "MiniMax-M2.7",
+                "max_tokens": 2000,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return "chat"
+        data = resp.json()
+        content = data.get("content", "")
+        if isinstance(content, list):
+            content = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        label = content.strip().lower()
+        # 规范化
+        for tag in ("weather", "market", "exchange", "music", "search", "help"):
+            if tag in label:
+                return tag
+        return "chat"
+    except Exception:
+        return "chat"
+
+
 # ── Layer 4: MiniMax AI ────────────────────────────────────────────────────────
-def _get_minimax_key():
-    """读取 .env 中的 MiniMax API Key"""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        for line in open(env_path, encoding="utf-8"):
-            line = line.strip()
-            if line.startswith("ANTHROPIC_API_KEY="):
-                return line.split("=", 1)[1].strip()
-    return ""
-
-
-def _get_minimax_base():
-    """读取 .env 中的 MiniMax Base URL"""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        for line in open(env_path, encoding="utf-8"):
-            line = line.strip()
-            if line.startswith("ANTHROPIC_BASE_URL="):
-                return line.split("=", 1)[1].strip()
-    return "https://api.minimaxi.com/anthropic"
+from v2.utils import minimax_key, minimax_url
 
 
 def ai_chat(user_message, max_tokens=500, system_prompt=None):
     """使用 MiniMax M2.7 AI 对话，带历史上下文"""
-    api_key = _get_minimax_key()
-    base_url = _get_minimax_base()
+    api_key = minimax_key()
+    url = minimax_url()
 
     if system_prompt is None:
         system_prompt = (
@@ -838,7 +868,7 @@ def ai_chat(user_message, max_tokens=500, system_prompt=None):
             headers["Authorization"] = f"Bearer {api_key}"
 
         resp = requests.post(
-            f"{base_url}/v1/messages",
+            url,
             headers=headers,
             json=payload,
             timeout=(10, 120),
@@ -1013,15 +1043,15 @@ plan.md 格式：
         processed_dir=PROCESSED_DIR,
     )
 
-    api_key = _get_minimax_key()
-    base_url = _get_minimax_base()
+    api_key = minimax_key()
+    url = minimax_url()
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         resp = requests.post(
-            f"{base_url}/v1/messages",
+            url,
             headers=headers,
             json={
                 "model": "MiniMax-M2.7",

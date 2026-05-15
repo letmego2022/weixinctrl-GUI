@@ -12,7 +12,6 @@ from typing import Optional
 
 from v2.plugins import PluginBase
 
-API_BASE = "https://api.minimaxi.com"
 OUTPUT_DIR = Path(__file__).parent.parent / "minimax_output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -23,24 +22,19 @@ def _ts():
 
 
 def _get_api_key():
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.exists():
-        return ""
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("ANTHROPIC_API_KEY="):
-            return line.split("=", 1)[1].strip()
-    return ""
+    from v2.utils import minimax_key
+    return minimax_key()
 
 
 def _ai(prompt: str) -> Optional[str]:
     """调用 MiniMax 文本 API"""
-    api_key = _get_api_key()
+    from v2.utils import minimax_key, minimax_url
+    api_key = minimax_key()
     if not api_key:
         return None
 
     resp = requests.post(
-        f"{API_BASE}/anthropic/v1/messages",
+        minimax_url(),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "model": "MiniMax-M2.7",
@@ -62,10 +56,11 @@ def _ai(prompt: str) -> Optional[str]:
 
 def _call_music_api(payload: dict) -> Optional[str]:
     """调用 MiniMax 音乐生成 API，返回下载后的本地文件路径"""
+    from v2.utils import minimax_base
     api_key = _get_api_key()
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    resp = requests.post(f"{API_BASE}/v1/music_generation",
+    resp = requests.post(f"{minimax_base()}/v1/music_generation",
                          headers=headers, json=payload, timeout=120)
     if resp.status_code != 200:
         return None
@@ -162,19 +157,11 @@ class MiniMaxMusicPlugin(PluginBase):
     def on_interval(self, account, user_id: str) -> Optional[str]:
         return None
 
-    def on_message(self, msg, account, from_user: str) -> Optional[str]:
-        from v2.client import extract_text, send_message, send_file_message, log_message
+    def _start_music(self, request: str, account, from_user: str, context_token: str):
+        """启动异步音乐生成"""
+        from v2.client import send_message, send_file_message, log_message
         from v2.bridge import bridge
 
-        text = extract_text(msg)
-        if not text or not text.startswith("/music"):
-            return None
-
-        request = text[len("/music"):].strip()
-        if not request:
-            return "用法: /music <需求>\n例如:\n/music 一首关于夏天的轻快歌曲\n/music 写一首失恋的歌词"
-
-        context_token = msg.get("context_token", "")
         account_id = account.get("user_id", "")
 
         def run():
@@ -207,4 +194,24 @@ class MiniMaxMusicPlugin(PluginBase):
                 send_message(account, from_user, "❌ 文件发送失败", context_token)
 
         threading.Thread(target=run, daemon=True).start()
+
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """被 AI 意图分类路由调用"""
+        self._start_music(text, account, from_user, context_token or "")
         return "⏳ 正在创作中，稍候…"
+
+    def on_message(self, msg, account, from_user: str) -> Optional[str]:
+        from v2.client import extract_text
+        text = extract_text(msg)
+        if not text:
+            return None
+
+        # /music 命令
+        if text.startswith("/music"):
+            request = text[len("/music"):].strip()
+            if not request:
+                return "用法: /music <需求>"
+            self._start_music(request, account, from_user, msg.get("context_token", ""))
+            return "⏳ 正在创作中，稍候…"
+
+        return None

@@ -10,33 +10,11 @@ from typing import Optional
 from v2.plugins import PluginBase
 
 
-def _get_api_key():
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.exists():
-        return ""
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("ANTHROPIC_API_KEY="):
-            return line.split("=", 1)[1].strip()
-    return ""
-
-
-def _get_base():
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.exists():
-        return "https://api.minimaxi.com"
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("ANTHROPIC_BASE_URL="):
-            url = line.split("=", 1)[1].strip()
-            return url.split("/anthropic")[0] if "/anthropic" in url else url
-    return "https://api.minimaxi.com"
-
-
 def do_search(query: str) -> Optional[str]:
     """执行搜索并返回 AI 总结"""
-    api_key = _get_api_key()
-    base = _get_base()
+    from v2.utils import minimax_key, minimax_base, minimax_url
+    api_key = minimax_key()
+    base = minimax_base()
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     # Step 1: 搜索
@@ -72,7 +50,7 @@ def do_search(query: str) -> Optional[str]:
 - 如果搜索结果不足，诚实说明"""
 
     ai_resp = requests.post(
-        f"{base}/anthropic/v1/messages",
+        minimax_url(),
         headers=headers,
         json={
             "model": "MiniMax-M2.7",
@@ -108,6 +86,10 @@ class WebSearchPlugin(PluginBase):
 
     def on_interval(self, account, user_id: str) -> Optional[str]:
         return None
+
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """被 AI 意图分类路由调用"""
+        return do_search(text)
 
     def on_message(self, msg, account, from_user: str) -> Optional[str]:
         from v2.client import extract_text, send_message, log_message

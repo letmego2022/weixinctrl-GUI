@@ -156,28 +156,31 @@ class CMBExchangePlugin(PluginBase):
             self.log_warning(f"获取失败，下个周期重试 ({self._retry_count}/{self.MAX_RETRIES})")
         return None
 
-    def on_message(self, msg, account, from_user: str) -> Optional[str]:
-        """收到消息时立即查询汇率"""
-        from v2.client import extract_text
-        text = extract_text(msg)
-        if not text:
-            return None
-
-        keywords = ["汇率", "换汇", "美元", "外汇", "购汇", "结汇", "币", "外汇牌价", "换成美元", "换成人民币"]
-        if not any(k in text for k in keywords):
-            return None
-
+    def on_query(self, text: str, account=None, from_user=None, context_token=None) -> Optional[str]:
+        """被 AI 意图分类路由调用"""
         rate = self._fetch_rate()
         if not rate:
-            self.log_warning("用户查询汇率失败")
+            self.log_warning("汇率查询失败")
             return "❌ 汇率查询失败，请稍后重试"
 
-        # 更新缓存以保持趋势准确
         if self._last_buy_rate is None:
             self._last_buy_rate = rate["buy"]
             self._last_sell_rate = rate["sell"]
 
         return self._format_rate_markdown(rate)
+
+    def on_message(self, msg, account, from_user: str) -> Optional[str]:
+        """收到消息时查询汇率（关键词匹配，保留兼容）"""
+        from v2.client import extract_text
+        text = extract_text(msg)
+        if not text:
+            return None
+
+        keywords = ["汇率", "换汇", "美元", "外汇", "购汇", "结汇", "外汇牌价", "换成美元", "换成人民币"]
+        if not any(k in text for k in keywords):
+            return None
+
+        return self.on_query(text)
 
 
 if __name__ == "__main__":

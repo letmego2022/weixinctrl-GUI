@@ -80,57 +80,57 @@ class MessagePanel(ctk.CTkFrame):
 
     # ── 消息渲染 ──────────────────────────────────────────────────────────
 
-    def _append_system(self, text):
-        self._textbox.configure(state="normal")
-        self._insl("· " + text, "sys")
-        self._insl()
-        self._textbox.configure(state="disabled")
+    def _check_bottom(self):
+        """实时检查是否在底部（每次插入前调用）"""
+        self._at_bottom = self._textbox.yview()[1] >= 0.99
+
+    def _scroll_if_bottom(self):
         if self._at_bottom:
             self._textbox.see("end")
 
+    def _append_system(self, text):
+        self._textbox.configure(state="normal")
+        self._check_bottom()
+        self._insl("· " + text, "sys")
+        self._insl()
+        self._textbox.configure(state="disabled")
+        self._scroll_if_bottom()
+
     def _append_received(self, from_user: str, content: str, timestamp: str):
         self._textbox.configure(state="normal")
+        self._check_bottom()
 
         # 头行：▌ ◀ user · HH:MM:SS
         self._ins("▌", "bar")
         self._ins(" ◀ " + from_user, "recv")
         self._ins("  ·  " + timestamp, "time")
         self._insl()
-
-        self._insl()  # 空行
-        # 内容
-        for line in content.split("\n"):
-            self._insl("   " + line)  # 3空格缩进
         self._insl()
-
-        # 底边分隔
+        for line in content.split("\n"):
+            self._insl("   " + line)
+        self._insl()
         self._sep()
         self._insl()
         self._textbox.configure(state="disabled")
-        if self._at_bottom:
-            self._textbox.see("end")
+        self._scroll_if_bottom()
 
     def _append_sent(self, content: str, timestamp: str):
         self._textbox.configure(state="normal")
+        self._check_bottom()
 
         # 头行：▌ ▶ HH:MM:SS
         self._ins("▌", "bar")
         self._ins(" ▶ 发送", "sent")
         self._ins("  ·  " + timestamp, "time")
         self._insl()
-
-        self._insl()  # 空行
-        # 内容
+        self._insl()
         for line in content.split("\n"):
             self._insl("   " + line)
         self._insl()
-
-        # 底边分隔
         self._sep()
         self._insl()
         self._textbox.configure(state="disabled")
-        if self._at_bottom:
-            self._textbox.see("end")
+        self._scroll_if_bottom()
 
     # ── 历史加载 ──────────────────────────────────────────────────────────
 

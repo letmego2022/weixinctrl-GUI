@@ -38,6 +38,7 @@ env/
 
 # Logs
 *.log
+logs/
 chat_logs/*.json
 !chat_logs/.gitkeep
 
@@ -51,8 +52,15 @@ node_modules/
 # Env
 .env
 
-# Temp
+# Claude local
+.claude/
+
+# Temp / Test
 tmp/
 temp/
+minimax_output/
+/minimax_music.py
+/minimax_search_test.py
 
-received/minimax_output/
+# Received files
+received/
