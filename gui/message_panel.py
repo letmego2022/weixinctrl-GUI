@@ -1,6 +1,5 @@
 """
-message_panel.py - 消息日志面板
-基于 customtkinter，支持 markdown 渲染
+message_panel.py - 消息日志面板 (sci-fi 终端风格)
 """
 import sys
 import os
@@ -8,20 +7,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
 from customtkinter import CTkTextbox
-import mistune
+
+# 配色
+CLR_RECV  = "#00e5ff"
+CLR_SENT  = "#00e676"
+CLR_ERR   = "#ff5252"
+CLR_SYS   = "#626278"
+CLR_TIME  = "#484860"
+CLR_BAR   = "#1e1e30"
+FONT      = ("Cascadia Code", 11)
+SEP_W     = 56
 
 
 class MessagePanel(ctk.CTkFrame):
-    COLOR_RECV = "#7289da"
-    COLOR_SENT = "#3ba55c"
-    COLOR_ERROR = "#f14c4c"
-    COLOR_SYSTEM = "#72767d"
-    COLOR_TIME = "#72767d"
 
     def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
+        super().__init__(master, fg_color="#12121c", **kwargs)
 
-        self._md = mistune.create_markdown(plugins=["table"])
         self._history_loaded = False
         self._at_bottom = True
 
@@ -33,72 +35,104 @@ class MessagePanel(ctk.CTkFrame):
         bridge.on_polling_status(self._on_polling_started)
 
     def _setup_ui(self):
-        self._textbox = CTkTextbox(self, font=("Cascadia Code", 12), wrap="word",
-                                    corner_radius=8)
+        self._textbox = CTkTextbox(self, font=FONT, wrap="word",
+                                    fg_color="#12121c", text_color="#c8ccd4",
+                                    corner_radius=0, border_width=0,
+                                    spacing1=2, spacing2=2, spacing3=4)
         self._textbox.configure(state="disabled")
-        self._textbox.pack(fill="both", expand=True, padx=4, pady=4)
-        self._textbox.tag_config("recv", foreground=self.COLOR_RECV)
-        self._textbox.tag_config("sent", foreground=self.COLOR_SENT)
-        self._textbox.tag_config("system", foreground=self.COLOR_SYSTEM)
-        self._textbox.tag_config("time", foreground=self.COLOR_TIME)
+        self._textbox.pack(fill="both", expand=True)
 
-        # 绑定滚动事件
+        for tag, fg in [
+            ("recv",  CLR_RECV),
+            ("sent",  CLR_SENT),
+            ("err",   CLR_ERR),
+            ("sys",   CLR_SYS),
+            ("time",  CLR_TIME),
+            ("bar",   CLR_BAR),
+        ]:
+            self._textbox.tag_config(tag, foreground=fg)
+
         self._textbox.bind("<Configure>", self._on_configure)
-
-        self._append_system("消息日志已就绪，等待连接...")
+        self._append_system("等待连接…")
 
     def _on_configure(self, event):
-        # 检测是否在底部
-        self._at_bottom = (
-            self._textbox.yview()[1] >= 0.999
-        )
+        self._at_bottom = self._textbox.yview()[1] >= 0.999
 
-    def _render_markdown(self, text: str) -> str:
-        return self._md(text)
+    @staticmethod
+    def _now():
+        from datetime import datetime
+        return datetime.now().strftime("%H:%M:%S")
 
-    def _escape(self, text):
-        return (str(text)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;"))
+    # ── 写入原语 ─────────────────────────────────────────────────────────
+
+    def _ins(self, s, tag=None):
+        if tag:
+            self._textbox.insert("end", s, tag)
+        else:
+            self._textbox.insert("end", s)
+
+    def _insl(self, s="", tag=None):
+        self._ins(s, tag)
+        self._ins("\n")
+
+    def _sep(self):
+        self._insl("▌" + "─" * SEP_W, "bar")
+
+    # ── 消息渲染 ──────────────────────────────────────────────────────────
 
     def _append_system(self, text):
         self._textbox.configure(state="normal")
-        ts = self._now()
-        self._textbox.insert("end", f"[{ts}] ", "time")
-        self._textbox.insert("end", f"--- {self._escape(text)} ---", "system")
-        self._textbox.insert("end", "\n")
+        self._insl("· " + text, "sys")
+        self._insl()
         self._textbox.configure(state="disabled")
         if self._at_bottom:
             self._textbox.see("end")
 
     def _append_received(self, from_user: str, content: str, timestamp: str):
         self._textbox.configure(state="normal")
-        self._textbox.insert("end", f"[{timestamp}] ", "time")
-        self._textbox.insert("end", f"◀ {from_user}\n", "recv")
-        # markdown 内容
-        md_html = self._render_markdown(content)
-        # customtkinter 的 CTkTextbox 不支持 HTML，用纯文本
-        self._textbox.insert("end", content + "\n", "recv")
-        self._textbox.insert("end", "\n")
+
+        # 头行：▌ ◀ user · HH:MM:SS
+        self._ins("▌", "bar")
+        self._ins(" ◀ " + from_user, "recv")
+        self._ins("  ·  " + timestamp, "time")
+        self._insl()
+
+        self._insl()  # 空行
+        # 内容
+        for line in content.split("\n"):
+            self._insl("   " + line)  # 3空格缩进
+        self._insl()
+
+        # 底边分隔
+        self._sep()
+        self._insl()
         self._textbox.configure(state="disabled")
         if self._at_bottom:
             self._textbox.see("end")
 
     def _append_sent(self, content: str, timestamp: str):
         self._textbox.configure(state="normal")
-        self._textbox.insert("end", f"[{timestamp}] ", "time")
-        self._textbox.insert("end", "发送 ▶\n", "sent")
-        self._textbox.insert("end", content + "\n", "sent")
-        self._textbox.insert("end", "\n")
+
+        # 头行：▌ ▶ HH:MM:SS
+        self._ins("▌", "bar")
+        self._ins(" ▶ 发送", "sent")
+        self._ins("  ·  " + timestamp, "time")
+        self._insl()
+
+        self._insl()  # 空行
+        # 内容
+        for line in content.split("\n"):
+            self._insl("   " + line)
+        self._insl()
+
+        # 底边分隔
+        self._sep()
+        self._insl()
         self._textbox.configure(state="disabled")
         if self._at_bottom:
             self._textbox.see("end")
 
-    @staticmethod
-    def _now():
-        from datetime import datetime
-        return datetime.now().strftime("%H:%M:%S")
+    # ── 历史加载 ──────────────────────────────────────────────────────────
 
     def _on_polling_started(self, running: bool):
         if not running or self._history_loaded:
@@ -123,6 +157,8 @@ class MessagePanel(ctk.CTkFrame):
                 self._append_received(name, text, ts)
             else:
                 self._append_sent(text, ts)
+
+    # ── bridge 回调 ──────────────────────────────────────────────────────
 
     def _on_message_received(self, data: dict):
         self.after(0, lambda: self._append_received(

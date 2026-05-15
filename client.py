@@ -47,20 +47,6 @@ RECEIVED_VIDEOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "
 PIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pic")
 
 # ── 插件系统 ──────────────────────────────────────────────────────────────────
-from v2.plugins import PluginManager
-from v2.plugins.weather import WeatherPlugin
-from v2.plugins.cmb_exchange import CMBExchangePlugin
-from v2.plugins.market import MarketPlugin
-from v2.plugins.phone import PhonePlugin
-
-# 初始化插件管理器
-plugin_manager = PluginManager()
-# 注册内置插件
-plugin_manager.register(WeatherPlugin())
-plugin_manager.register(CMBExchangePlugin())
-plugin_manager.register(MarketPlugin())
-plugin_manager.register(PhonePlugin())
-
 # ── Claude Code CLI 系统提示 ───────────────────────────────────────────────────
 CC_SYSTEM_PROMPT = """\
 你是一个文件处理助手，**不要分析当前项目代码**。
@@ -799,16 +785,17 @@ def _load_recent_history(limit=6):
 
 
 # ── Layer 4: Ollama AI ────────────────────────────────────────────────────────
-def ai_chat(user_message):
+def ai_chat(user_message, max_tokens=500, system_prompt=None):
     """使用本地 Ollama AI 对话，带历史上下文"""
-    system_prompt = (
-        "你是用户的私人助手，说话简洁、口语化，像朋友聊天。\n"
-        "用户使用 iPhone。\n"
-        "如果用户询问历史对话中已有的数据（股市、天气、汇率等），直接从历史中提取回答，不要说查不到。\n"
-        "知道就说知道，不知道就说不知道，不要编造。\n"
-        "回答尽量简短，不超过200字。\n"
-        "禁止啰嗦，禁止废话。"
-    )
+    if system_prompt is None:
+        system_prompt = (
+            "你是用户的私人助手，说话简洁、口语化，像朋友聊天。\n"
+            "用户使用 iPhone。\n"
+            "如果用户询问历史对话中已有的数据（股市、天气、汇率等），直接从历史中提取回答，不要说查不到。\n"
+            "知道就说知道，不知道就说不知道，不要编造。\n"
+            "回答尽量简短，不超过200字。\n"
+            "禁止啰嗦，禁止废话。"
+        )
     try:
         history = _load_recent_history(limit=6)
         messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": user_message}]
@@ -818,7 +805,7 @@ def ai_chat(user_message):
             json={
                 "model": "gpt-oss:120b-cloud",
                 "messages": messages,
-                "max_tokens": 500,
+                "max_tokens": max_tokens,
             },
             timeout=(10, 120),
         )
