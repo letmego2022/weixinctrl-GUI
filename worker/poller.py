@@ -41,6 +41,7 @@ from v2.plugins.cmd import CmdPlugin
 from v2.plugins.cc import CcPlugin
 from v2.plugins.daily_summary import DailySummaryPlugin
 from v2.plugins.minimax_music import MiniMaxMusicPlugin
+from v2.plugins.web_search import WebSearchPlugin
 
 logger = logging.getLogger("weixin.poller")
 
@@ -68,6 +69,7 @@ class PollerThread(threading.Thread):
         self.plugin_manager.register(CcPlugin())
         self.plugin_manager.register(DailySummaryPlugin())
         self.plugin_manager.register(MiniMaxMusicPlugin())
+        self.plugin_manager.register(WebSearchPlugin())
 
     def _load_account(self):
         """加载账号，失败则退出"""
