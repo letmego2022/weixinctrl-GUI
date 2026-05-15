@@ -861,7 +861,7 @@ def unified_chat(user_message, max_tokens=500):
         '2. 用户明确要求执行操作（如「帮我写首歌」「查天气」「今天大盘怎么样」「美元汇率多少」）→ 在回复最开头加 [TOOL:工具名]\n'
         "3. 普通聊天、闲聊、知识问答 → 直接回复，不调用工具\n"
         "4. 不确定是否需要工具 → 不调用，直接回复\n"
-        "5. [TOOL:xxx] 必须独占一行放在回复最开头"
+        "5. [TOOL:xxx] 放在回复中任意位置即可，建议放在开头"
     )
 
     try:
@@ -889,11 +889,10 @@ def unified_chat(user_message, max_tokens=500):
             content = "".join(b.get("text", "") for b in content if b.get("type") == "text")
         content = content.strip() if content else "..."
 
-        # 解析工具调用标记 [TOOL:xxx]
-        tool_match = re.match(r'\[TOOL:(\w+)\]', content, re.IGNORECASE)
+        # 解析工具调用标记 [TOOL:xxx]（全文搜索，不限于行首）
+        tool_match = re.search(r'\[TOOL:(\w+)\]', content, re.IGNORECASE)
         if tool_match:
             tool_name = tool_match.group(1).lower()
-            # 去掉工具标记行，保留后续文本
             clean = re.sub(r'\[TOOL:\w+\]\s*', '', content, count=1, flags=re.IGNORECASE).strip()
             return (clean or user_message, tool_name)
 

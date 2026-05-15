@@ -26,7 +26,6 @@ from v2.client import (
     save_voice,
     save_file,
     save_video,
-    handle_message as client_handle_message,
     unified_chat,
     is_user_message,
     CURSOR_FILE,
@@ -182,6 +181,14 @@ class PollerThread(threading.Thread):
 
         is_command = text.startswith("/")
 
+        plugin_map = {
+            "weather": "weather",
+            "market": "market",
+            "exchange": "cmb_exchange",
+            "music": "minimax_music",
+            "search": "web_search",
+        }
+
         # ── 快速通道：/ 命令直接走插件匹配 ──
         if is_command:
             plugin_responses = self.plugin_manager.on_message(msg, self._account, from_user)
@@ -192,14 +199,6 @@ class PollerThread(threading.Thread):
 
         # ── 统一通道：AI 对话 + 意图分发，一次调用完成 ──
         if not is_command:
-            plugin_map = {
-                "weather": "weather",
-                "market": "market",
-                "exchange": "cmb_exchange",
-                "music": "minimax_music",
-                "search": "web_search",
-            }
-
             response_text, tool_name = unified_chat(text)
             self._emit_log(f"统一对话: tool={tool_name} ← \"{text[:30]}\"", 1)
 
@@ -223,16 +222,26 @@ class PollerThread(threading.Thread):
                 self._send_and_log(from_user, response_text, context_token)
             return
 
-        # ── 兜底：/ 命令未匹配时走普通 AI 对话 ──
-        response = client_handle_message(text, self._account, from_user, context_token)
-        if response:
-            if isinstance(response, tuple):
-                response_text, output_file = response
-            else:
-                response_text, output_file = response, None
+        # ── 兜底：/ 命令未匹配时走统一通道 ──
+        response_text, tool_name = unified_chat(text)
+        self._emit_log(f"兜底统一对话: tool={tool_name} ← \"{text[:30]}\"", 1)
 
-            if response_text:
-                self._send_and_log(from_user, response_text, context_token)
+        if tool_name and tool_name in plugin_map:
+            plugin = self.plugin_manager.get_plugin(plugin_map[tool_name])
+            if plugin and hasattr(plugin, "on_query"):
+                result = plugin.on_query(text, self._account, from_user, context_token)
+                if result:
+                    self._send_and_log(from_user, result, context_token, f"插件 {plugin.name}")
+                    return
+            if plugin:
+                result = plugin.on_message(msg, self._account, from_user)
+                if result:
+                    for pname, ptext in result:
+                        self._send_and_log(from_user, ptext, context_token, f"插件 {pname}")
+                    return
+
+        if response_text:
+            self._send_and_log(from_user, response_text, context_token)
 
     def _check_plugins(self):
         """检查并执行定时插件"""
