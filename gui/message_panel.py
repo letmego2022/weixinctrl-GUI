@@ -175,10 +175,7 @@ class MessagePanel(ctk.CTkFrame):
         self._at_bottom = self._textbox.yview()[1] >= 0.99
 
     def _append_to_buffer(self, role: str, name: str, content: str, ts_str: str):
-        try:
-            ts_dt = datetime.strptime(ts_str, "%H:%M:%S")
-        except Exception:
-            ts_dt = datetime.now()
+        ts_dt = datetime.now()  # 使用当前时间，避免1900年导致的折叠误判
         self._buffer.append((role, name, content, ts_dt))
         self._last_ts = ts_dt
         self._folded = True  # 新消息来 → 重新折叠旧消息

@@ -27,6 +27,7 @@ from v2.client import (
     save_file,
     save_video,
     handle_message as client_handle_message,
+    unified_chat,
     is_user_message,
     CURSOR_FILE,
 )
@@ -61,6 +62,13 @@ class PollerThread(threading.Thread):
 
         # 初始化插件管理器
         self.plugin_manager = PluginManager()
+        # 标记初始插件文件（防止热加载重复注册）
+        self.plugin_manager._loaded_files.update([
+            "weather.py", "cmb_exchange.py", "market.py", "phone.py",
+            "cmd.py", "cc.py", "daily_summary.py", "minimax_music.py",
+            "web_search.py",
+        ])
+
         self.plugin_manager.register(WeatherPlugin())
         self.plugin_manager.register(CMBExchangePlugin())
         self.plugin_manager.register(MarketPlugin())
@@ -182,12 +190,8 @@ class PollerThread(threading.Thread):
                     self._send_and_log(from_user, plugin_text, context_token, f"插件 {plugin_name}")
                 return
 
-        # ── 智能通道：非 / 消息 → AI 意图分类 → 路由到对应插件 ──
+        # ── 统一通道：AI 对话 + 意图分发，一次调用完成 ──
         if not is_command:
-            from v2.client import classify_intent
-            intent = classify_intent(text)
-            self._emit_log(f"意图分类: {intent} ← \"{text[:30]}\"", 1)
-
             plugin_map = {
                 "weather": "weather",
                 "market": "market",
@@ -196,26 +200,30 @@ class PollerThread(threading.Thread):
                 "search": "web_search",
             }
 
-            if intent == "help":
-                from v2.client import run_command
-                result = run_command("help")
-                if result:
-                    self._send_and_log(from_user, result, context_token, "帮助")
-                    return
+            response_text, tool_name = unified_chat(text)
+            self._emit_log(f"统一对话: tool={tool_name} ← \"{text[:30]}\"", 1)
 
-            if intent in plugin_map:
-                plugin = self.plugin_manager.get_plugin(plugin_map[intent])
+            if tool_name and tool_name in plugin_map:
+                plugin = self.plugin_manager.get_plugin(plugin_map[tool_name])
                 if plugin and hasattr(plugin, "on_query"):
                     result = plugin.on_query(text, self._account, from_user, context_token)
                     if result:
                         self._send_and_log(from_user, result, context_token, f"插件 {plugin.name}")
                         return
-                result = plugin.on_message(msg, self._account, from_user) if plugin else None
-                if result:
-                    self._send_and_log(from_user, result, context_token, f"插件 {plugin.name}")
-                    return
+                # on_message 兜底
+                if plugin:
+                    result = plugin.on_message(msg, self._account, from_user)
+                    if result:
+                        for pname, ptext in result:
+                            self._send_and_log(from_user, ptext, context_token, f"插件 {pname}")
+                        return
 
-        # ── 兜底：普通 AI 对话 ──
+            # 无工具调用 → 直接发送 AI 回复
+            if response_text:
+                self._send_and_log(from_user, response_text, context_token)
+            return
+
+        # ── 兜底：/ 命令未匹配时走普通 AI 对话 ──
         response = client_handle_message(text, self._account, from_user, context_token)
         if response:
             if isinstance(response, tuple):
@@ -249,10 +257,18 @@ class PollerThread(threading.Thread):
         from v2.bridge import bridge
         bridge.emit_polling_status(True)
 
+        _last_scan = 0
         while self._running:
             try:
                 # 定时插件检查
                 self._check_plugins()
+
+                # 热加载：每30秒扫描新插件
+                if time.time() - _last_scan > 30:
+                    n = self.plugin_manager.scan_and_load()
+                    if n:
+                        self._emit_log(f"热加载 {n} 个新插件", 1)
+                    _last_scan = time.time()
 
                 # 消息轮询
                 msgs, self._cursor = get_updates(self._account, self._cursor)
