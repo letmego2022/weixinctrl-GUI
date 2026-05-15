@@ -785,7 +785,7 @@ def _load_recent_history(limit=6):
 
 
 def classify_intent(text: str) -> str:
-    """AI 意图分类，返回插件名或 'chat'"""
+    """AI 意图分类，返回插件名或 'chat'（已废弃，保留兼容）"""
     api_key = minimax_key()
     url = minimax_url()
     headers = {"Content-Type": "application/json"}
@@ -831,6 +831,80 @@ chat — 其他（闲聊、知识问答等）
         return "chat"
     except Exception:
         return "chat"
+
+
+def unified_chat(user_message, max_tokens=500):
+    """统一对话 + 意图分发。
+    AI 根据上下文自行判断：直接回复还是调用插件。
+    返回 (response_text, tool_name_or_None)
+    """
+    api_key = minimax_key()
+    url = minimax_url()
+
+    system_prompt = (
+        "你是用户的私人助手，说话简洁、口语化，像朋友聊天。\n"
+        "用户使用 iPhone。\n"
+        "如果用户询问历史对话中已有的数据（股市、天气、汇率等），直接从历史中提取回答，不要说查不到。\n"
+        "知道就说知道，不知道就说不知道，不要编造。\n"
+        "回答尽量简短，不超过200字。\n"
+        "禁止啰嗦，禁止废话。\n"
+        "\n"
+        "你可以调用以下工具：\n"
+        "- weather: 查询实时天气、气温、降雨\n"
+        "- market: 查询股市指数、行情\n"
+        "- exchange: 查询美元汇率\n"
+        "- music: 生成AI音乐或歌词\n"
+        "- search: 搜索最新新闻和信息\n"
+        "\n"
+        "工具调用规则（非常重要）：\n"
+        '1. 用户询问你能做什么（如「你可以创作歌曲吗」「你能查天气吗」「有什么功能」）→ 直接回答，不调用工具\n'
+        '2. 用户明确要求执行操作（如「帮我写首歌」「查天气」「今天大盘怎么样」「美元汇率多少」）→ 在回复最开头加 [TOOL:工具名]\n'
+        "3. 普通聊天、闲聊、知识问答 → 直接回复，不调用工具\n"
+        "4. 不确定是否需要工具 → 不调用，直接回复\n"
+        "5. [TOOL:xxx] 必须独占一行放在回复最开头"
+    )
+
+    try:
+        history = _load_recent_history(limit=6)
+        messages = history + [{"role": "user", "content": user_message}]
+
+        payload = {
+            "model": "MiniMax-M2.7",
+            "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
+            "system": system_prompt,
+            "messages": messages,
+        }
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        resp = requests.post(url, headers=headers, json=payload, timeout=(10, 120))
+        if resp.status_code != 200:
+            return f"AI 错误: {resp.status_code}", None
+
+        data = resp.json()
+        content = data.get("content", "")
+        if isinstance(content, list):
+            content = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        content = content.strip() if content else "..."
+
+        # 解析工具调用标记 [TOOL:xxx]
+        tool_match = re.match(r'\[TOOL:(\w+)\]', content, re.IGNORECASE)
+        if tool_match:
+            tool_name = tool_match.group(1).lower()
+            # 去掉工具标记行，保留后续文本
+            clean = re.sub(r'\[TOOL:\w+\]\s*', '', content, count=1, flags=re.IGNORECASE).strip()
+            return (clean or user_message, tool_name)
+
+        return (content, None)
+
+    except requests.exceptions.Timeout:
+        return "请求超时了", None
+    except requests.exceptions.ConnectionError:
+        return "AI 服务连接失败", None
+    except Exception as e:
+        return f"AI 异常: {e}", None
 
 
 # ── Layer 4: MiniMax AI ────────────────────────────────────────────────────────

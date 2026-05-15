@@ -90,10 +90,12 @@ class PluginBase(ABC):
 
 
 class PluginManager:
-    """插件管理器"""
+    """插件管理器（支持热加载）"""
 
     def __init__(self):
         self._plugins: List[PluginBase] = []
+        self._loaded_files = set()       # 已加载的 .py 文件
+        self._dynamic_file_to_name = {}  # 热加载的: fname → plugin_name
 
     def register(self, plugin: PluginBase):
         """注册插件"""
@@ -103,6 +105,62 @@ class PluginManager:
     def unregister(self, name: str):
         """卸载插件"""
         self._plugins = [p for p in self._plugins if p.name != name]
+        logging.getLogger("weixin.plugins").info(f"插件已卸载: {name}")
+
+    def scan_and_load(self) -> int:
+        """扫描 plugins/ 目录，热加载新增 .py 文件，清理已删除的热加载插件"""
+        import importlib.util
+        import os
+
+        plugins_dir = os.path.dirname(os.path.abspath(__file__))
+        loaded = 0
+
+        # ── 清理: 已删除的热加载文件 → 卸载对应插件 ──
+        gone = [f for f in self._dynamic_file_to_name
+                 if not os.path.exists(os.path.join(plugins_dir, f))]
+        for fname in gone:
+            pname = self._dynamic_file_to_name.pop(fname)
+            self.unregister(pname)
+            self._loaded_files.discard(fname)
+
+        # ── 扫描新文件 ──
+        for fname in sorted(os.listdir(plugins_dir)):
+            if not fname.endswith(".py") or fname.startswith("_"):
+                continue
+            if fname in self._loaded_files:
+                continue
+
+            fpath = os.path.join(plugins_dir, fname)
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"v2.plugins.{fname[:-3]}", fpath
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+            except Exception as e:
+                logging.getLogger("weixin.plugins").warning(
+                    f"热加载失败: {fname} — {e}"
+                )
+                continue
+
+            for name in dir(mod):
+                obj = getattr(mod, name)
+                if (isinstance(obj, type) and
+                        issubclass(obj, PluginBase) and
+                        obj is not PluginBase and
+                        obj.__module__ == mod.__name__):
+                    try:
+                        plugin = obj()
+                        self.register(plugin)
+                        self._loaded_files.add(fname)
+                        self._dynamic_file_to_name[fname] = plugin.name
+                        loaded += 1
+                    except Exception as e:
+                        logging.getLogger("weixin.plugins").warning(
+                            f"插件实例化失败: {name} — {e}"
+                        )
+
+        return loaded
 
     def get_plugin(self, name: str) -> Optional[PluginBase]:
         """获取插件"""
