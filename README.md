@@ -41,6 +41,7 @@
 | `cmd` | Claude Code CLI 异步执行 | `/cmd 帮我把桌面整理一下` |
 | `cc` | Claude Code 读写 Obsidian 知识库 | `/cc 搜索关于微服务的笔记` |
 | `daily_summary` | AI 生成结构化总结 | 每天 20:00 自动推送，4 大分类 |
+| `minimax_music` | MiniMax AI 音乐创作 | `/music 一首关于夏天的轻快歌曲` |
 
 ### 内置命令
 
@@ -57,6 +58,7 @@
 ## 快速开始
 
 ```bash
+cp .env.example .env               # 编辑 .env 填入 MiniMax API Key（使用 /music 需要）
 pip install -r requirements.txt    # Python 依赖
 node standalone-login.mjs          # 扫码登录
 python main.py                     # 启动
@@ -69,6 +71,7 @@ python main.py                     # 启动
 | Python 3.10+ | 运行环境 | ✓ |
 | Node.js | 登录脚本 + 媒体加密 | ✓ |
 | Ollama | 本地 AI（模型 `gpt-oss:120b-cloud`） | ✓ |
+| MiniMax API | 音乐生成（`/music` 插件） | 可选 |
 | MongoDB | phone 插件反查 | 可选 |
 | Everything (es.exe) | 文件搜索命令 | 可选 |
 
@@ -121,7 +124,8 @@ v2/
 │   ├── phone.py             # 号码反查
 │   ├── cmd.py               # Claude Code CLI
 │   ├── cc.py                # Claude Code 知识库
-│   └── daily_summary.py     # 每日总结
+│   ├── daily_summary.py     # 每日总结
+│   └── minimax_music.py     # MiniMax 音乐生成
 └── worker/
     └── poller.py            # 消息轮询线程
 ```
