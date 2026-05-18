@@ -5,10 +5,6 @@ main_window.py - 主窗口 (sci-fi 主题)
 import sys
 import os
 import threading
-import base64
-import random
-import json
-import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -266,15 +262,27 @@ class MainWindow(ctk.CTkFrame):
         self._poller = PollerThread()
         self._poller.start()
         bridge.set_poller(self._poller)
+        # 延迟检测：如果线程因登录失败快速退出，复位 UI
+        self.after(1500, self._check_poller_alive)
         self._running = True
         self._update_power_ui(True)
         self._update_status_bar()
+
+    def _check_poller_alive(self):
+        """轮询线程启动后检测是否因登录失败退出"""
+        if self._poller and not self._poller.is_alive() and self._running:
+            self._running = False
+            self._update_power_ui(False)
+            self._start_time = None
+            if self._log_panel:
+                self._log_panel.append("启动失败：未登录，请先扫码登录", 3)
 
     def _stop_polling(self):
         if self._poller:
             self._poller._running = False
             self._poller.join(timeout=3)
         self._running = False
+        self._start_time = None
         self._update_power_ui(False)
 
     def _send_message(self):
@@ -283,6 +291,11 @@ class MainWindow(ctk.CTkFrame):
             return
         if not self._running:
             self._input_entry.delete(0, "end")
+            return
+        if not self._poller or not self._poller._account:
+            self._input_entry.delete(0, "end")
+            if self._log_panel:
+                self._log_panel.append("无法发送：未登录或连接已断开", 3)
             return
 
         self._input_entry.delete(0, "end")
@@ -321,43 +334,44 @@ class MainWindow(ctk.CTkFrame):
         os._exit(0)
 
     def _open_login(self):
-        import http.client
+        """运行 standalone-login.mjs 完成扫码登录"""
+        import subprocess
+        import os as _os
 
-        FIXED_BASE_URL = "https://ilinkai.weixin.qq.com"
-        ILINK_APP_ID = "bot"
+        if self._log_panel and not self._log_panel.winfo_viewable():
+            self._toggle_log()
 
-        def build_client_version(version):
-            parts = list(map(int, version.split(".")))
-            return ((parts[0] & 0xff) << 16) | ((parts[1] & 0xff) << 8) | (parts[2] & 0xff)
+        self._log_panel.append("启动扫码登录…", 1)
 
-        def http_get(url, headers=None):
-            u = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(url)
-            path = u.path if u.path else "/"
-            if u.query:
-                path += "?" + u.query
-            conn = http.client.HTTPSConnection(u.hostname, timeout=40)
-            h = {"iLink-App-Id": ILINK_APP_ID, "iLink-App-Client-Version": str(build_client_version("2.1.8"))}
-            if headers:
-                h.update(headers)
-            conn.request("GET", path, headers=h)
-            resp = conn.getresponse()
-            data = resp.read()
-            conn.close()
-            if data:
-                try:
-                    return json.loads(data.decode("utf-8"))
-                except json.JSONDecodeError:
-                    pass
-            return {}
+        script_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        script_path = _os.path.join(script_dir, "standalone-login.mjs")
 
-        try:
-            url = f"{FIXED_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3"
-            resp = http_get(url, {"X-WECHAT-UIN": base64.b64encode(str(random.getrandbits(32)).encode()).decode()})
-            qr_url = resp.get("qrcode_img_content") or resp.get("qrcode")
-            if qr_url:
-                webbrowser.open(qr_url)
-                self._log_panel.append("已打开扫码登录页面", 1)
-            else:
-                self._log_panel.append("获取登录链接失败", 2)
-        except Exception as e:
-            self._log_panel.append(f"登录异常: {e}", 3)
+        def do_login():
+            try:
+                proc = subprocess.run(
+                    ["node", script_path],
+                    cwd=script_dir,
+                    capture_output=True, text=True, timeout=300,
+                )
+                output = proc.stdout + proc.stderr
+                for line in output.splitlines():
+                    if line.strip():
+                        self.after(0, lambda l=line: self._log_panel.append(l.strip(), 1))
+                if proc.returncode == 0 and "登录成功" in output:
+                    self.after(0, lambda: self._log_panel.append("登录完成，可点击启动", 1))
+                    self.after(0, lambda: self._on_login_success())
+                else:
+                    self.after(0, lambda: self._log_panel.append("登录失败，请重试", 3))
+            except subprocess.TimeoutExpired:
+                self.after(0, lambda: self._log_panel.append("登录超时", 3))
+            except FileNotFoundError:
+                self.after(0, lambda: self._log_panel.append("未找到 Node.js，请安装后重试", 3))
+            except Exception as e:
+                self.after(0, lambda e=e: self._log_panel.append(f"登录异常: {e}", 3))
+
+        threading.Thread(target=do_login, daemon=True).start()
+
+    def _on_login_success(self):
+        """登录成功后显示提示"""
+        if hasattr(self, "_plugin_panel"):
+            self._plugin_panel.pack_forget()
