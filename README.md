@@ -73,8 +73,13 @@
 ```bash
 cp .env.example .env               # 编辑 .env 填入 MiniMax API Key
 pip install -r requirements.txt    # Python 依赖
-python main.py                     # 启动（未登录自动弹扫码页）
+python main.py                     # 启动 GUI
 ```
+
+启动后操作：
+
+1. 点 **登录** → 终端弹出二维码 → 微信扫码确认 → 账号自动保存
+2. 日志面板显示"登录完成"后，点 **启动** → 开始收发消息
 
 **前置条件：**
 
@@ -110,7 +115,7 @@ python main.py                     # 启动（未登录自动弹扫码页）
                     │
 ┌───────────────────▼─────────────────────────────┐
 │              client.py  (核心引擎)                 │
-│  微信 API  │  Ollama AI  │  聊天记录  │  媒体处理   │
+│  微信 API  │  MiniMax AI  │  聊天记录  │  媒体处理   │
 └─────────────────────────────────────────────────┘
 ```
 
