@@ -82,7 +82,7 @@ class MessagePanel(ctk.CTkFrame):
         self._textbox.delete("1.0", "end")
 
         if not self._buffer:
-            self._insl("· 等待连接…", "sys")
+            self._insl("· 暂无消息", "sys")
             self._insl()
             self._textbox.configure(state="disabled")
             return
