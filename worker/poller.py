@@ -42,6 +42,7 @@ from v2.plugins.cc import CcPlugin
 from v2.plugins.daily_summary import DailySummaryPlugin
 from v2.plugins.minimax_music import MiniMaxMusicPlugin
 from v2.plugins.web_search import WebSearchPlugin
+from v2.plugins.fetch_url import FetchUrlPlugin
 
 logger = logging.getLogger("weixin.poller")
 
@@ -65,7 +66,7 @@ class PollerThread(threading.Thread):
         self.plugin_manager._loaded_files.update([
             "weather.py", "cmb_exchange.py", "market.py", "phone.py",
             "cmd.py", "cc.py", "daily_summary.py", "minimax_music.py",
-            "web_search.py",
+            "web_search.py", "fetch_url.py",
         ])
 
         self.plugin_manager.register(WeatherPlugin())
@@ -77,6 +78,7 @@ class PollerThread(threading.Thread):
         self.plugin_manager.register(DailySummaryPlugin())
         self.plugin_manager.register(MiniMaxMusicPlugin())
         self.plugin_manager.register(WebSearchPlugin())
+        self.plugin_manager.register(FetchUrlPlugin())
 
     def _load_account(self):
         """加载账号，失败则退出"""
@@ -187,6 +189,7 @@ class PollerThread(threading.Thread):
             "exchange": "cmb_exchange",
             "music": "minimax_music",
             "search": "web_search",
+            "url": "fetch_url",
         }
 
         # ── 快速通道：/ 命令直接走插件匹配 ──
